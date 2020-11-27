@@ -4,18 +4,18 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>cn.xnatural.aio</groupId>
-    <artifactId>aio</artifactId>
+    <groupId>cn.xnatural.http</groupId>
+    <artifactId>http</artifactId>
     <packaging>jar</packaging>
     <version>1.0.1</version>
 
-    <url>https://gitee.com/xnat/aio</url>
+    <url>https://gitee.com/xnat/http</url>
 
     <dependencies>
         <dependency>
-            <groupId>cn.xnatural.aio</groupId>
-            <artifactId>aio</artifactId>
-            <version>1.0.0</version>
+            <groupId>cn.xnatural.enet</groupId>
+            <artifactId>enet-event</artifactId>
+            <version>0.0.15</version>
         </dependency>
         <dependency>
             <groupId>com.alibaba</groupId>
@@ -40,7 +40,7 @@
 
 
     <name>aio</name>
-    <description>基于 jdk aio 的工具 AioClient, AioServer, AioStream</description>
+    <description>基于 jdk aio 的轻量的http服务 </description>
 
     <licenses>
         <license>
@@ -51,9 +51,9 @@
     </licenses>
 
     <scm>
-        <url>https://gitee.com/xnat/aio</url>
-        <connection>https://gitee.com/xnat/aio.git</connection>
-        <developerConnection>https://gitee.com/xnat/aio</developerConnection>
+        <url>https://gitee.com/xnat/http</url>
+        <connection>https://gitee.com/xnat/http.git</connection>
+        <developerConnection>https://gitee.com/xnat/http</developerConnection>
     </scm>
 
     <developers>

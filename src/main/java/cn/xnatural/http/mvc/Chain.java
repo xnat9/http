@@ -14,7 +14,7 @@ import java.util.function.Consumer;
 /**
  * mvc Handler 执行链路
  */
-class Chain {
+public class Chain {
     protected static final Logger              log       = LoggerFactory.getLogger(Chain.class);
     protected final        LinkedList<Handler> handlers  = new LinkedList<>();
     protected final        HttpServer          server;
@@ -22,7 +22,7 @@ class Chain {
     protected final        Map<String, Chain>  subChains = new ConcurrentHashMap<>();
 
 
-    Chain(HttpServer server) { this.server = server; }
+    public Chain(HttpServer server) { this.server = server; }
 
 
     /**

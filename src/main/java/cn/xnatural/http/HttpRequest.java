@@ -4,26 +4,29 @@ import cn.xnatural.http.common.LazySupplier;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONException;
 import com.alibaba.fastjson.parser.Feature;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.*;
 
 public class HttpRequest {
+    protected static final Logger              log        = LoggerFactory.getLogger(HttpRequest.class);
     // 请求的创建时间
-    final           Date                createTime = new Date();
+    final                  Date                createTime = new Date();
     // HTTP/HTTPS
-    protected       String              protocol;
+    protected              String              protocol;
     // GET/POST
-    protected       String              method;
+    protected              String              method;
     // 原始url地址字符串
-    protected       String              rowUrl;
+    protected              String              rowUrl;
     // http协议版本: 1.0/1.1/1.2
-    protected       String              version;
-    protected       String              bodyStr;
-    protected final Map<String, String> headers    = new HashMap<>();
-    protected final HttpDecoder         decoder    = new HttpDecoder(this);
-    protected final HttpAioSession      session;
+    protected              String              version;
+    protected              String              bodyStr;
+    protected final        Map<String, String> headers    = new HashMap<>();
+    protected final        HttpDecoder         decoder    = new HttpDecoder(this);
+    protected HttpAioSession      session;
 
 
     HttpRequest(HttpAioSession session) { this.session = session; }
@@ -146,6 +149,9 @@ public class HttpRequest {
             }
             return Collections.unmodifiableMap(data);
         }
+        if (ct != null && ct.contains("multipart/form-data") && decoder.multiForm != null) {
+            return Collections.unmodifiableMap(decoder.multiForm);
+        }
         return Collections.emptyMap();
     });
 
@@ -165,7 +171,7 @@ public class HttpRequest {
             try {
                 return Collections.unmodifiableMap(JSON.parseObject(bodyStr, Feature.AllowComment, Feature.AllowSingleQuotes));
             } catch (JSONException ex) {
-                session.delegete.log.error("Request body is not a JSON: " + bodyStr);
+                log.error("Request body is not a JSON: " + bodyStr);
             }
         }
         return Collections.emptyMap();
