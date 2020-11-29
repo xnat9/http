@@ -7,7 +7,7 @@
     <groupId>cn.xnatural.http</groupId>
     <artifactId>http</artifactId>
     <packaging>jar</packaging>
-    <version>1.0.1</version>
+    <version>1.0.0</version>
 
     <url>https://gitee.com/xnat/http</url>
 
@@ -16,11 +16,6 @@
             <groupId>cn.xnatural.enet</groupId>
             <artifactId>enet-event</artifactId>
             <version>0.0.15</version>
-        </dependency>
-        <dependency>
-            <groupId>com.alibaba</groupId>
-            <artifactId>fastjson</artifactId>
-            <version>1.2.75</version>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -39,8 +34,8 @@
     </dependencies>
 
 
-    <name>aio</name>
-    <description>基于 jdk aio 的轻量的http服务 </description>
+    <name>http</name>
+    <description>基于 https://gitee.com/xnat/aio</description>
 
     <licenses>
         <license>

@@ -100,7 +100,7 @@ public class Chain {
      * @param handler 处理器
      * @return
      */
-    Chain method(String method, String path, String[] contentTypes, Handler handler) {
+    public Chain method(String method, String path, String[] contentTypes, Handler handler) {
         if (path == null || path.isEmpty()) throw new IllegalArgumentException("path mut not be empty");
         return add(new PathHandler() {
             @Override
@@ -144,7 +144,7 @@ public class Chain {
      * 添加 websocket Handler
      * @return
      */
-    Chain ws(String path, Handler handler) {
+    public Chain ws(String path, Handler handler) {
         return add(new WSHandler() {
             @Override
             void handle(HttpContext ctx) {
@@ -164,7 +164,7 @@ public class Chain {
      * @param handler
      * @return
      */
-    Chain filter(Handler handler, int order) {
+    public Chain filter(Handler handler, int order) {
         return add(new FilterHandler() {
             @Override
             void handle(HttpContext ctx) {
@@ -208,7 +208,7 @@ public class Chain {
      * @param handlerBuilder mvc执行链builder
      * @return Chain
      */
-    Chain prefix(final String prefix, final Consumer<Chain> handlerBuilder) {
+    public Chain prefix(final String prefix, final Consumer<Chain> handlerBuilder) {
         Chain subChain = this;
         for (String singlePrefix : Handler.extract(prefix).split("/")) { // 折成单路径(没有/分割的路径片)
             Chain parentChain = subChain;
