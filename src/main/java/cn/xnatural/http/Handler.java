@@ -1,32 +1,31 @@
-package cn.xnatural.http.mvc;
-
-import cn.xnatural.http.HttpContext;
+package cn.xnatural.http;
 
 /**
  * 对应一个 控制层 的一个处理器
  */
-abstract class Handler {
+@FunctionalInterface
+public interface Handler {
 
 
     /**
      * 逻辑处理
      * @param ctx
      */
-    abstract void handle(HttpContext ctx);
+    void handle(HttpContext ctx);
 
 
     /**
      * 匹配的顺序, 越大越先匹配
      * @return
      */
-    double order() { return 0d; }
+    default double order() { return 0d; }
 
 
     /**
      * Handler 类型
      * @return
      */
-    String type() { return Handler.class.getSimpleName(); }
+    default String type() { return Handler.class.getSimpleName(); }
 
 
     /**
@@ -34,7 +33,7 @@ abstract class Handler {
      * @param ctx
      * @return
      */
-    boolean match(HttpContext ctx) { return false; }
+    default boolean match(HttpContext ctx) { return false; }
 
 
     /**

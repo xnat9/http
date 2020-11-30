@@ -1,4 +1,4 @@
-package cn.xnatural.http.common;
+package cn.xnatural.http;
 
 import java.util.function.Supplier;
 
@@ -16,6 +16,16 @@ public class LazySupplier<T> implements Supplier<T> {
         if (supplier == null) throw new NullPointerException("supplier is null");
         this.supplier = supplier;
     }
+
+
+    /**
+     * 清除
+     */
+    public void clear() {
+        once = false;
+        result = null;
+    }
+
 
     @Override
     public T get() {

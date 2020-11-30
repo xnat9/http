@@ -1,6 +1,5 @@
 package cn.xnatural.http;
 
-import cn.xnatural.http.common.LazySupplier;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONException;
 import com.alibaba.fastjson.parser.Feature;
@@ -11,6 +10,9 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.*;
 
+/**
+ * Http 请求数据
+ */
 public class HttpRequest {
     protected static final Logger              log        = LoggerFactory.getLogger(HttpRequest.class);
     // 请求的创建时间
@@ -26,7 +28,7 @@ public class HttpRequest {
     protected              String              bodyStr;
     protected final        Map<String, String> headers    = new HashMap<>();
     protected final        HttpDecoder         decoder    = new HttpDecoder(this);
-    protected HttpAioSession      session;
+    protected final HttpAioSession             session;
 
 
     HttpRequest(HttpAioSession session) { this.session = session; }
@@ -61,6 +63,10 @@ public class HttpRequest {
             return cookies;
         }
     });
+    /**
+     * cookie 值映射
+     * @return
+     */
     public Map<String, String> cookies() {
         return _cookies.get();
     }
@@ -79,10 +85,6 @@ public class HttpRequest {
     }
 
 
-    /**
-     * 查询参数Map
-     * @return
-     */
     private LazySupplier<Map<String, Object>> _queryParams = new LazySupplier<>(() -> {
         if (queryStr() != null) {
             Map<String, Object> data = new HashMap<>();
@@ -109,6 +111,10 @@ public class HttpRequest {
         }
         return Collections.emptyMap();
     });
+    /**
+     * 查询参数Map
+     * @return
+     */
     public Map<String, Object> queryParams() {
         return _queryParams.get();
     }
@@ -154,7 +160,6 @@ public class HttpRequest {
         }
         return Collections.emptyMap();
     });
-
     /**
      * 表单参数
      * Content-Type: application/x-www-form-urlencoded
@@ -176,6 +181,10 @@ public class HttpRequest {
         }
         return Collections.emptyMap();
     });
+    /**
+     * json 参数
+     * @return
+     */
     public Map<String, Object> jsonParams() {
         return _jsonParams.get();
     }

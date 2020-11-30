@@ -13,7 +13,7 @@ public class HttpResponse {
     protected final Map<String, String>  headers = new HashMap<>();
     protected final Map<String, String>  cookies = new HashMap<>();
     protected final AtomicBoolean        commit  = new AtomicBoolean(false);
-    static final    Map<Integer, String> statusMsg;
+    public static final    Map<Integer, String> statusMsg;
     static final String CONTENT_TYPE = "content-type";
 
 

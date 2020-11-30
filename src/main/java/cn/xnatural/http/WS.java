@@ -1,4 +1,4 @@
-package cn.xnatural.http.ws;
+package cn.xnatural.http;
 
 import java.lang.annotation.*;
 

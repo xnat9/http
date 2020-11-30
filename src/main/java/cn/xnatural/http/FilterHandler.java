@@ -1,6 +1,4 @@
-package cn.xnatural.http.mvc;
-
-import cn.xnatural.http.HttpContext;
+package cn.xnatural.http;
 
 /**
  * Filter

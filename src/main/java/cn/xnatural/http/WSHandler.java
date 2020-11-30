@@ -1,4 +1,4 @@
-package cn.xnatural.http.mvc;
+package cn.xnatural.http;
 
 abstract class WSHandler extends PathHandler {
     @Override

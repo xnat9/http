@@ -1,7 +1,5 @@
 package cn.xnatural.http;
 
-import cn.xnatural.http.common.LazySupplier;
-import cn.xnatural.http.ws.WebSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,8 +19,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class HttpAioSession {
     protected static final Logger                    log         = LoggerFactory.getLogger(HttpAioSession.class);
     protected final        AsynchronousSocketChannel channel;
-    protected final                ReadHandler                  readHandler = new ReadHandler(this);
-    protected HttpServer                server;
+    protected final                ReadHandler                  readHandler = new ReadHandler();
+    public HttpServer                server;
     // 上次读写时间
     protected              Long                      lastUsed    = System.currentTimeMillis();
     protected final AtomicBoolean closed      = new AtomicBoolean(false);
@@ -51,12 +49,13 @@ public class HttpAioSession {
     /**
      * 关闭
      */
-    void close() {
+    public void close() {
         if (closed.compareAndSet(false, true)) {
             try { channel.shutdownOutput(); } catch(Exception ex) {}
             try { channel.shutdownInput(); } catch(Exception ex) {}
             try { channel.close(); } catch(Exception ex) {}
-            tmpFiles.forEach((f) -> {try {f.delete(); } catch (Exception ex) {}});
+            _buf.clear(); // 释放
+            tmpFiles.forEach((f) -> {try { f.delete(); } catch (Exception ex) {}});
             doClose(this);
         }
     }
@@ -69,14 +68,18 @@ public class HttpAioSession {
      * 发送消息到客户端
      * @param buf
      */
-    void send(ByteBuffer buf) {
+    public void send(ByteBuffer buf) {
         if (closed.get() || buf == null) return;
         lastUsed = System.currentTimeMillis();
         try {
             channel.write(buf).get();
         } catch (Exception ex) {
             if (!(ex instanceof ClosedChannelException)) {
-                log.error(ex.getClass().getName() + " " + channel.getLocalAddress().toString() + " ->" + channel.getRemoteAddress().toString(), ex);
+                try {
+                    log.error(ex.getClass().getName() + " " + channel.getLocalAddress().toString() + " ->" + channel.getRemoteAddress().toString(), ex);
+                } catch (IOException e) {
+                    log.error("", e);
+                }
             }
             close();
         }
@@ -100,7 +103,7 @@ public class HttpAioSession {
 
     protected class ReadHandler implements CompletionHandler<Integer, ByteBuffer> {
         // 当前解析的请求
-        HttpRequest request;
+        protected HttpRequest request;
 
         @Override
         public void completed(Integer count, ByteBuffer buf) {
@@ -109,13 +112,18 @@ public class HttpAioSession {
                 buf.flip();
 
                 if (ws != null) { // 是 WebSocket的情况
-                    ws.decoder.decode(buf);
+                    try {
+                        ws.decoder.decode(buf);
+                    } catch (Exception ex) {
+                        log.error("Web socket decode error", ex);
+                        close(); return;
+                    }
                 } else { // 正常 http 请求
                     if (request == null) {request = new HttpRequest(HttpAioSession.this); }
                     try {
                         request.decoder.decode(buf);
                     } catch (Exception ex) {
-                        log.error("HTTP 解析出错", ex);
+                        log.error("Http decode error", ex);
                         close(); return;
                     }
                     if (request.decoder.complete) {
@@ -148,7 +156,7 @@ public class HttpAioSession {
                 try {
                     log.error(ex.getClass().getSimpleName() + " " + channel.getLocalAddress().toString() + " ->" + channel.getRemoteAddress().toString(), ex);
                 } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    log.error("", e);
                 }
             }
             close();

@@ -1,4 +1,4 @@
-package cn.xnatural.http.mvc;
+package cn.xnatural.http;
 
 import java.io.InputStream;
 import java.util.UUID;

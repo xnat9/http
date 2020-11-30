@@ -1,11 +1,6 @@
 package cn.xnatural.http;
 
-import cn.xnatural.aio.AioServer;
 import cn.xnatural.enet.event.EL;
-import cn.xnatural.http.common.LazySupplier;
-import cn.xnatural.http.mvc.*;
-import cn.xnatural.http.ws.WS;
-import cn.xnatural.http.ws.WebSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,7 +30,9 @@ public class HttpServer {
     protected final CompletionHandler<AsynchronousSocketChannel, HttpServer> handler = new AcceptHandler();
     protected       AsynchronousServerSocketChannel                          ssc;
     protected final       LazySupplier<String>                _hpCfg = new LazySupplier<>(() -> getStr("hp", ":7070"));
-    protected final       LazySupplier<Integer>                _port = new LazySupplier<>(() -> Integer.valueOf(_hpCfg.get().split(":")[1]));
+    protected final       LazySupplier<Integer>               _port = new LazySupplier<>(() -> Integer.valueOf(_hpCfg.get().split(":")[1]));
+    protected final LazySupplier<String> _charset = new LazySupplier<>(() -> getStr("charset", "utf-8"));
+    protected final LazySupplier<String> _sessionCookieName = new LazySupplier<>(() -> getStr("sessionCookieName", "sId"));
     protected final Chain                  chain        = new Chain(this);
     protected final List                   ctrls        = new LinkedList<>();
     // 是否可用
@@ -54,8 +51,7 @@ public class HttpServer {
     protected final ExecutorService exec;
 
     /**
-     * 创建 {@link AioServer}
-     *
+     * 创建
      * @param attrs 属性集
      *              maxMsgSize: socket 每次取数据的最大
      *              writeTimeout: 数据写入超时时间. 单位:毫秒
@@ -94,6 +90,7 @@ public class HttpServer {
 
             ssc.bind(addr, getInteger("backlog", 128));
             initChain();
+            enabled = true;
             accept();
             log.info("Start listen HTTP(AIO) {}", _hpCfg.get());
         } catch (IOException e) {
@@ -109,10 +106,6 @@ public class HttpServer {
     }
 
 
-    @EL(name = "sys.started", async = true)
-    protected void started() { enabled = true; }
-
-
     /**
      * 接收新的 http 请求
      * @param request
@@ -121,11 +114,11 @@ public class HttpServer {
         HttpContext hCtx = null;
         try {
             // 打印请求
-            if (!_ignoreLogSuffix.get().stream().anyMatch((suffix) -> request.path().endsWith(suffix))) {
+            if (_ignoreLogSuffix.get().stream().noneMatch((suffix) -> request.path().endsWith(suffix))) {
                 log.info("Start Request '{}': {}. from: " + request.session.channel.getRemoteAddress().toString(), request.id(), request.rowUrl);
             }
             counter.increment();
-            hCtx = new HttpContext(request, this);
+            hCtx = new HttpContext(request, this, sessionDelegate());
             if (enabled) {
                 if (app.sysLoad == 10 || connections.size() > getInteger("maxConnections", 128)) { // 限流
                     hCtx.response.status(503);
@@ -139,11 +132,19 @@ public class HttpServer {
                 hCtx.render(ApiResp.fail("服务忙, 请稍后..."));
             }
         } catch (Exception ex) {
-            log.error("请求处理错误", ex);
+            log.error("Handle request error", ex);
             if (hCtx != null) hCtx.close();
         }
     }
 
+
+    /**
+     * session 数据 委托对象
+     * @return
+     */
+    protected Map<String, Object> sessionDelegate() {
+        return null;
+    }
 
 
     /**
@@ -189,7 +190,7 @@ public class HttpServer {
      */
     protected void parseCtrl(Object ctrl, Chain chain) {
         Ctrl aCtrl = ctrl.getClass().getAnnotation(Ctrl.class);
-        Consumer<Method> fn = method -> {
+        Consumer<Method> parser = method -> {
             Path aPath = method.getAnnotation(Path.class);
             if (aPath != null) { // 路径映射
                 if (aPath.path().length < 1) {
@@ -204,7 +205,7 @@ public class HttpServer {
                         return;
                     }
                     log.info("Request mapping: /" + (((aCtrl.prefix() != null && !aCtrl.prefix().isEmpty()) ? aCtrl.prefix() + "/" : "") + ("/".equals(path) ? "" : path)));
-                    chain.method(aPath.method(), path, aPath.consumer(), (hCtx) -> { // 实际@Path 方法 调用
+                    chain.method(aPath.method(), path, aPath.consumer(), hCtx -> { // 实际@Path 方法 调用
                         try {
                             Object result = method.invoke(ctrl, Arrays.stream(ps).map((p) -> hCtx.param(p.name, p.type)).toArray());
                             if (!void.class.isAssignableFrom(method.getReturnType())) {
@@ -271,7 +272,7 @@ public class HttpServer {
         };
         Class c = ctrl.getClass();
         do {
-            for (Method m : c.getDeclaredMethods()) { fn.accept(m); }
+            for (Method m : c.getDeclaredMethods()) { parser.accept(m); }
             c = c.getSuperclass();
         } while (c != null);
     }
@@ -296,10 +297,10 @@ public class HttpServer {
     public void errHandle(Exception ex, HttpContext ctx) {
         if (ex instanceof AccessControlException) {
             log.error("Request Error '" + ctx.request.id() + "', url: " + ctx.request.rowUrl() + ", " + ex.getMessage());
-            ctx.render(ApiResp.of(ctx.respCode ? ctx.respCode : "403", (ex.message ? ": $ex.message" : "")));
+            ctx.render(ApiResp.of("403", ex.getMessage()));
             return;
         }
-        log.error("Request Error '" + ctx.request.id + "', url: " + ctx.request.rowUrl, ex);
+        log.error("Request Error '" + ctx.request.id() + "', url: " + ctx.request.rowUrl, ex);
         ctx.render(ApiResp.of(ctx.respCode ? ctx.respCode : "01", ctx.respMsg?:(ex.class.simpleName + (ex.message ? ": $ex.message" : ""))))
     }
 
@@ -324,7 +325,11 @@ public class HttpServer {
                 channel.setOption(StandardSocketOptions.SO_KEEPALIVE, true);
                 channel.setOption(StandardSocketOptions.TCP_NODELAY, true);
 
-                se = new HttpAioSession(channel, this); connections.offer(se);
+                se = new HttpAioSession(channel, this) {
+                    @Override
+                    protected void doClose(HttpAioSession session) { connections.remove(session); }
+                };
+                connections.offer(se);
                 InetSocketAddress rAddr = ((InetSocketAddress) channel.getLocalAddress());
                 log.debug("New HTTP(AIO) Connection from: " + rAddr.getHostString() + ":" + rAddr.getPort() + ", connected: " + connections.size())
                 se.start();
@@ -444,7 +449,18 @@ public class HttpServer {
     }
 
 
-    protected Integer getPort() { return _port.get(); }
+    /**
+     * 暴露的端口
+     * @return
+     */
+    public Integer getPort() { return _port.get(); }
+
+
+    /**
+     * 字符集
+     * @return
+     */
+    public String getCharset() { return _charset.get(); }
 
 
     public Object getAttr(String key) { return attrs.get(key); }

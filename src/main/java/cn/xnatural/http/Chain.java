@@ -1,7 +1,5 @@
-package cn.xnatural.http.mvc;
+package cn.xnatural.http;
 
-import cn.xnatural.http.HttpContext;
-import cn.xnatural.http.HttpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,13 +14,18 @@ import java.util.function.Consumer;
  */
 public class Chain {
     protected static final Logger              log       = LoggerFactory.getLogger(Chain.class);
+    /**
+     * 处理器链
+     */
     protected final        LinkedList<Handler> handlers  = new LinkedList<>();
     protected final        HttpServer          server;
-    // 子Chain: prefix(前缀) -> Chain
-    protected final        Map<String, Chain>  subChains = new ConcurrentHashMap<>();
+    /**
+     * 子Chain: path(前缀) -> {@link Chain}
+     */
+    protected final        Map<String, Chain>  subChains = new ConcurrentHashMap<>(7);
 
 
-    public Chain(HttpServer server) { this.server = server; }
+    protected Chain(HttpServer server) { this.server = server; }
 
 
     /**
@@ -36,7 +39,7 @@ public class Chain {
                 h.handle(ctx);
             } else if (h instanceof PathHandler) {
                 match = h.match(ctx);
-                log.trace((match ? "Matched" : "Unmatch") + " {}, {}", ((PathHandler) h).path(), ctx.request.path);
+                log.trace((match ? "Matched" : "Unmatch") + " {}, {}", ((PathHandler) h).path(), ctx.request.path());
                 if (match) {
                     h.handle(ctx);
                     break;
@@ -62,7 +65,7 @@ public class Chain {
      * @param handler
      * @return
      */
-    Chain add(Handler handler) {
+    protected Chain add(Handler handler) {
         boolean added = false;
         int i = 0;
         for (ListIterator<Handler> it = handlers.listIterator(); it.hasNext(); ) {
@@ -96,7 +99,7 @@ public class Chain {
      * 指定方法,路径处理器
      * @param method get, post, delete ...
      * @param path 匹配路径
-     * @param contentTypes application/json, multipart/form-data, application/x-www-form-urlencoded
+     * @param contentTypes application/json, multipart/form-data, application/x-www-form-urlencoded, text/plain
      * @param handler 处理器
      * @return
      */
@@ -104,7 +107,7 @@ public class Chain {
         if (path == null || path.isEmpty()) throw new IllegalArgumentException("path mut not be empty");
         return add(new PathHandler() {
             @Override
-            void handle(HttpContext ctx) {
+            public void handle(HttpContext ctx) {
                 try {
                     handler.handle(ctx);
                 } catch (Exception ex) {server.errHandle(ex, ctx);}
@@ -117,14 +120,14 @@ public class Chain {
             boolean match(HttpContext ctx) {
                 boolean matched = super.match(ctx);
                 if (!matched) return false;
-                if (method && !method.equalsIgnoreCase(ctx.request.method)) {
+                if (method != null && !method.equalsIgnoreCase(ctx.request.method)) {
                     ctx.response.status(405);
                     return false;
                 }
                 if (contentTypes == null || contentTypes.length < 1) {
                     boolean f = false;
                     for (String contentType: contentTypes) {
-                        if (contentType.split(";")[0].equalsIgnoreCase(ctx.request.contentType.split(';')[0])) {
+                        if (contentType.split(";")[0].equalsIgnoreCase(ctx.request.contentType().split(";")[0])) {
                             f = true; break;
                         }
                     }
@@ -147,7 +150,7 @@ public class Chain {
     public Chain ws(String path, Handler handler) {
         return add(new WSHandler() {
             @Override
-            void handle(HttpContext ctx) {
+            public void handle(HttpContext ctx) {
                 try {
                     handler.handle(ctx);
                 } catch (Exception ex) {server.errHandle(ex, ctx);}
@@ -167,34 +170,34 @@ public class Chain {
     public Chain filter(Handler handler, int order) {
         return add(new FilterHandler() {
             @Override
-            void handle(HttpContext ctx) {
+            public void handle(HttpContext ctx) {
                 try {
                     handler.handle(ctx);
                 } catch (Exception ex) {server.errHandle(ex, ctx);}
             }
 
             @Override
-            double order() { return Double.valueOf(order); }
+            public double order() { return Double.valueOf(order); }
         });
     }
 
 
-    Chain path(String path, Handler handler) {
+    public Chain path(String path, Handler handler) {
         return method(null, path, null, handler);
     }
 
 
-    Chain get(String path, Handler handler) {
+    public Chain get(String path, Handler handler) {
         return method("get", path, null, handler);
     }
 
 
-    Chain post(String path, Handler handler) {
+    public Chain post(String path, Handler handler) {
         return method("post", path, null, handler);
     }
 
 
-    Chain delete(String path, Handler handler) {
+    public Chain delete(String path, Handler handler) {
         return method("delete", path, null, handler);
     }
 
@@ -223,15 +226,19 @@ public class Chain {
                 boolean match(HttpContext ctx) {
                     boolean f = false;
                     for (int i = 0; i < pieces().length; i++) {
-                        f = (pieces()[i] == ctx.pieces[i]);
+                        f = (pieces()[i] == ctx.pathPieces.get(i));
                         if (!f) break;
                     }
-                    if (f) ctx.pieces = ctx.pieces.drop(pieces.length);
+                    if (f) {
+                        for (int i = 0; i < pieces().length; i++) {
+                            ctx.pathPieces.pop();
+                        }
+                    }
                     return f;
                 }
 
                 @Override
-                void handle(HttpContext ctx) {
+                public void handle(HttpContext ctx) {
                     chain.handle(ctx);
                 }
             });

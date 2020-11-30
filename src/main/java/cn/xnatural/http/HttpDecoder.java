@@ -1,7 +1,5 @@
 package cn.xnatural.http;
 
-import cn.xnatural.http.common.LazySupplier;
-import cn.xnatural.http.mvc.FileData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +30,6 @@ public class HttpDecoder {
     protected boolean     startLineComplete;
     protected boolean     headerComplete;
     protected boolean     bodyComplete;
-    protected LazySupplier<String>      charset = new LazySupplier<>(() -> request.session.delegate.getStr("charset", "utf-8"));
     // 当前读到哪个Part
     protected Part        curPart;
     protected LazySupplier<String> boundary = new LazySupplier<>(() -> {
@@ -143,7 +140,7 @@ public class HttpDecoder {
                 if (buf.remaining() < length) return false; // 数据没接收完
                 byte[] bs = new byte[length];
                 buf.get(bs);
-                request.bodyStr = new String(bs, charset.get());
+                request.bodyStr = new String(bs, request.session.server.getCharset());
             }
             return true;
         } else if (ct.contains("multipart/form-data")) {
@@ -312,7 +309,7 @@ public class HttpDecoder {
         }
         size += lineDelimiter.length;
         try {
-            return new String(bs, charset.get());
+            return new String(bs, request.session.server.getCharset());
         } catch (UnsupportedEncodingException e) {
             throw new RuntimeException(e);
         }
@@ -342,6 +339,9 @@ public class HttpDecoder {
     }
 
 
+    /**
+     * http 请求 Part
+     */
     protected class Part {
         String boundary;
         String name;
