@@ -25,7 +25,7 @@ public class Chain {
     protected final        Map<String, Chain>  subChains = new ConcurrentHashMap<>(7);
 
 
-    protected Chain(HttpServer server) { this.server = server; }
+    public Chain(HttpServer server) { this.server = server; }
 
 
     /**
@@ -36,15 +36,19 @@ public class Chain {
         boolean match = false;
         for (Handler h: handlers) { // 遍历查找匹配的Handler
             if (h instanceof FilterHandler) {
-                h.handle(ctx);
+                try {
+                    h.handle(ctx);
+                } catch (Throwable ex) {server.errHandle(ex, ctx);}
             } else if (h instanceof PathHandler) {
                 match = h.match(ctx);
-                log.trace((match ? "Matched" : "Unmatch") + " {}, {}", ((PathHandler) h).path(), ctx.request.path());
+                log.trace((match ? "Matched" : "Unmatch") + " {}, {}", ((PathHandler) h).path(), ctx.request.getPath());
                 if (match) {
-                    h.handle(ctx);
+                    try {
+                        h.handle(ctx);
+                    } catch (Throwable ex) {server.errHandle(ex, ctx);}
                     break;
                 }
-            } else new RuntimeException("未处理Handler类型: " + h.getClass().getSimpleName());
+            } else new RuntimeException("Unknown Handler type: " + h.getClass().getName());
             // 退出条件
             if (ctx.response.commit.get()) break;
         }
@@ -70,15 +74,15 @@ public class Chain {
         int i = 0;
         for (ListIterator<Handler> it = handlers.listIterator(); it.hasNext(); ) {
             Handler h = it.next();
-            if (h.type() == handler.type()) { // 添加类型的按优先级排在一起
-                if (h.order() < handler.order()) { // order 值越大越排前面
+            if (h.getType().equals(handler.getType())) { // 添加类型的按优先级排在一起
+                if (h.getOrder() < handler.getOrder()) { // order 值越大越排前面
                     it.previous(); // 相同类型 不是第一个 插入前面, 第一个插在第一个后面
                     it.add(handler); added = true; break;
-                } else if (h.order() == handler.order()) {// 相同的order 按顺序排
+                } else if (h.getOrder() == handler.getOrder()) {// 相同的order 按顺序排
                     it.add(handler); added = true; break;
                 } else { // 小于
                     if (i == 0 && it.hasNext() && ((h = it.next()) != null)) { // 和handler同类型的只有一个时, 插在后边
-                        if (h.type() != handler.type()) {
+                        if (h.getType() != handler.getType()) {
                             it.previous();
                             it.add(handler); added = true; break;
                         } else it.previous();
@@ -107,36 +111,34 @@ public class Chain {
         if (path == null || path.isEmpty()) throw new IllegalArgumentException("path mut not be empty");
         return add(new PathHandler() {
             @Override
-            public void handle(HttpContext ctx) {
-                try {
-                    handler.handle(ctx);
-                } catch (Exception ex) {server.errHandle(ex, ctx);}
+            public void handle(HttpContext ctx) throws Throwable {
+                handler.handle(ctx);
             }
 
             @Override
             String path() { return path; }
 
             @Override
-            boolean match(HttpContext ctx) {
-                boolean matched = super.match(ctx);
+            public boolean match(HttpContext hCtx) {
+                boolean matched = super.match(hCtx);
                 if (!matched) return false;
-                if (method != null && !method.equalsIgnoreCase(ctx.request.method)) {
-                    ctx.response.status(405);
+                if (method != null && !method.equalsIgnoreCase(hCtx.request.method)) {
+                    hCtx.response.status(405);
                     return false;
                 }
-                if (contentTypes == null || contentTypes.length < 1) {
+                if (contentTypes != null && contentTypes.length > 0) {
                     boolean f = false;
                     for (String contentType: contentTypes) {
-                        if (contentType.split(";")[0].equalsIgnoreCase(ctx.request.contentType().split(";")[0])) {
+                        if (contentType.split(";")[0].equalsIgnoreCase(hCtx.request.getContentType().split(";")[0])) {
                             f = true; break;
                         }
                     }
                     if (!f) {
-                        ctx.response.status(415);
+                        hCtx.response.status(415);
                         return false;
                     }
                 }
-                if (415 == ctx.response.status || 405 == ctx.response.status) ctx.response.status(200);
+                if (hCtx.response.status == null || 415 == hCtx.response.status || 405 == hCtx.response.status) hCtx.response.status(200);
                 return true;
             }
         });
@@ -150,10 +152,8 @@ public class Chain {
     public Chain ws(String path, Handler handler) {
         return add(new WSHandler() {
             @Override
-            public void handle(HttpContext ctx) {
-                try {
-                    handler.handle(ctx);
-                } catch (Exception ex) {server.errHandle(ex, ctx);}
+            public void handle(HttpContext ctx) throws Throwable {
+                handler.handle(ctx);
             }
 
             @Override
@@ -170,14 +170,12 @@ public class Chain {
     public Chain filter(Handler handler, int order) {
         return add(new FilterHandler() {
             @Override
-            public void handle(HttpContext ctx) {
-                try {
-                    handler.handle(ctx);
-                } catch (Exception ex) {server.errHandle(ex, ctx);}
+            public void handle(HttpContext ctx) throws Throwable {
+                handler.handle(ctx);
             }
 
             @Override
-            public double order() { return Double.valueOf(order); }
+            public double getOrder() { return Double.valueOf(order); }
         });
     }
 
@@ -223,15 +221,15 @@ public class Chain {
                 String path() { return singlePrefix; }
 
                 @Override
-                boolean match(HttpContext ctx) {
+                public boolean match(HttpContext hCtx) {
                     boolean f = false;
                     for (int i = 0; i < pieces().length; i++) {
-                        f = (pieces()[i] == ctx.pathPieces.get(i));
+                        f = (pieces()[i] == hCtx.pieces.get(i));
                         if (!f) break;
                     }
                     if (f) {
                         for (int i = 0; i < pieces().length; i++) {
-                            ctx.pathPieces.pop();
+                            hCtx.pieces.pop();
                         }
                     }
                     return f;

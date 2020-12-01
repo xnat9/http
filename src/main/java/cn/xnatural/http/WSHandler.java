@@ -1,6 +1,10 @@
 package cn.xnatural.http;
 
+/**
+ * web socket {@link Handler}
+ */
 abstract class WSHandler extends PathHandler {
+
     @Override
-    String type() { return WSHandler.class.getSimpleName(); }
+    public String getType() { return WSHandler.class.getSimpleName(); }
 }

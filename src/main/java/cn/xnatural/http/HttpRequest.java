@@ -39,14 +39,19 @@ public class HttpRequest {
         if (id != null || !id.isEmpty()) return id;
         return UUID.randomUUID().toString().replace("-", "");
     });
-    public String id() {
-        return _id.get();
-    }
+    /**
+     * 请求id
+     * @return
+     */
+    public String getId() { return _id.get(); }
 
 
-    public String contentType() {
-        return getHeader("content-type");
-    }
+    /**
+     * 请求头 Content-Type
+     * @return
+     */
+    public String getContentType() { return getHeader("content-type"); }
+
 
     private LazySupplier<Map<String, String>> _cookies = new LazySupplier<>(() -> {
         String cookieStr = getHeader("Cookie");
@@ -67,9 +72,7 @@ public class HttpRequest {
      * cookie 值映射
      * @return
      */
-    public Map<String, String> cookies() {
-        return _cookies.get();
-    }
+    public Map<String, String> getCookies() { return _cookies.get(); }
 
 
     /**
@@ -80,15 +83,17 @@ public class HttpRequest {
         int i = rowUrl.indexOf("?");
         return i == -1 ? null : rowUrl.substring(i + 1);
     });
-    public String queryStr() {
-        return _queryStr.get();
-    }
+    /**
+     * 请求url 的查询字符串 ? 后面那坨
+     * @return
+     */
+    public String getQueryStr() { return _queryStr.get(); }
 
 
     private LazySupplier<Map<String, Object>> _queryParams = new LazySupplier<>(() -> {
-        if (queryStr() != null) {
+        if (getQueryStr() != null) {
             Map<String, Object> data = new HashMap<>();
-            for (String s : queryStr().split("&")) {
+            for (String s : getQueryStr().split("&")) {
                 String[] arr = s.split("=");
                 String name = null;
                 try {
@@ -112,12 +117,10 @@ public class HttpRequest {
         return Collections.emptyMap();
     });
     /**
-     * 查询参数Map
+     * 请求查询参数Map
      * @return
      */
-    public Map<String, Object> queryParams() {
-        return _queryParams.get();
-    }
+    public Map<String, Object> getQueryParams() { return _queryParams.get(); }
 
 
     // 懒计算(只计算一次)例子
@@ -125,13 +128,15 @@ public class HttpRequest {
         int i = rowUrl.indexOf("?");
         return i == -1 ? rowUrl : rowUrl.substring(0, i);
     });
-    public String path() {
-        return _path.get();
-    }
+    /**
+     * 请求路径
+     * @return
+     */
+    public String getPath() { return _path.get(); }
 
 
     private LazySupplier<Map<String, Object>> _formParams = new LazySupplier<>(() -> {
-        String ct = contentType();
+        String ct = getContentType();
         if (bodyStr != null && !bodyStr.isEmpty() && ct != null && ct.contains("application/x-www-form-urlencoded")) {
             Map<String, Object> data = new HashMap<>();
             for (String s : bodyStr.split("&")) {
@@ -165,13 +170,11 @@ public class HttpRequest {
      * Content-Type: application/x-www-form-urlencoded
      * @return
      */
-    public Map<String, Object> formParams() {
-        return _formParams.get();
-    }
+    public Map<String, Object> getFormParams() { return _formParams.get(); }
 
 
     private LazySupplier<Map<String, Object>> _jsonParams = new LazySupplier<>(() -> {
-        String ct = contentType();
+        String ct = getContentType();
         if (bodyStr != null && !bodyStr.isEmpty() && ct != null && ct.contains("application/json")) {
             try {
                 return Collections.unmodifiableMap(JSON.parseObject(bodyStr, Feature.AllowComment, Feature.AllowSingleQuotes));
@@ -185,14 +188,12 @@ public class HttpRequest {
      * json 参数
      * @return
      */
-    public Map<String, Object> jsonParams() {
-        return _jsonParams.get();
-    }
+    public Map<String, Object> getJsonParams() { return _jsonParams.get(); }
 
 
     /**
      * 取Header值
-     * @param hName
+     * @param hName header 名
      * @return
      */
     public String getHeader(String hName) { return headers.get(hName.toLowerCase()); }
@@ -203,9 +204,9 @@ public class HttpRequest {
      * @param cName cookie 名
      * @return cookie 值
      */
-    public String cookie(String cName) {
-        if (cookies() == null) return null;
-        return cookies().get(cName);
+    public String getCookie(String cName) {
+        if (getCookies() == null) return null;
+        return getCookies().get(cName);
     }
 
 

@@ -39,8 +39,8 @@ public class HttpResponse {
     }
 
 
-    HttpResponse status(int status) {this.status = status; return this;}
-    HttpResponse statusIfNotSet(int status) {if (this.status == null) this.status = status; return this;}
+    public HttpResponse status(int status) {this.status = status; return this;}
+    public HttpResponse statusIfNotSet(int status) {if (this.status == null) this.status = status; return this;}
 
 
     /**
@@ -54,7 +54,7 @@ public class HttpResponse {
      * @param httpOnly
      * @return
      */
-    HttpResponse cookie(
+    public HttpResponse cookie(
             String cName, String cValue, Integer maxAge, String domain, String path, Boolean secure, Boolean httpOnly
     ) {
         cookies.put(cName,
@@ -76,7 +76,7 @@ public class HttpResponse {
      * @param maxAge
      * @return
      */
-    HttpResponse cookie(String cName, String cValue, Integer maxAge) {
+    public HttpResponse cookie(String cName, String cValue, Integer maxAge) {
         return cookie(cName, cValue, maxAge, null, null, null, null);
     }
 
@@ -85,7 +85,7 @@ public class HttpResponse {
      * 让 cookie 过期
      * @param cName cookie 名
      */
-    HttpResponse expireCookie(String cName) { return cookie(cName, "", 0); }
+    public HttpResponse expireCookie(String cName) { return cookie(cName, "", 0); }
 
 
     /**
@@ -94,7 +94,7 @@ public class HttpResponse {
      * @param hValue
      * @return
      */
-    HttpResponse header(String hName, Object hValue) {
+    public HttpResponse header(String hName, Object hValue) {
         headers.put(hName.toLowerCase(), hValue == null ? null : hValue.toString());
         return this;
     }
@@ -105,7 +105,7 @@ public class HttpResponse {
      * @param hName
      * @return
      */
-    String header(String hName) { return headers.get(hName.toLowerCase()); }
+    public String header(String hName) { return headers.get(hName.toLowerCase()); }
 
 
     /**
@@ -113,16 +113,16 @@ public class HttpResponse {
      * @param maxAge
      * @return
      */
-    HttpResponse cacheControl(Integer maxAge) {
+    public HttpResponse cacheControl(Integer maxAge) {
         header("cache-control", "max-age=" + maxAge);
         return this;
     }
 
 
-    HttpResponse contentType(CharSequence contentType) { return header("content-type", contentType); }
+    public HttpResponse contentType(CharSequence contentType) { return header("content-type", contentType); }
 
 
-    HttpResponse contentTypeIfNotSet(CharSequence contentType) {
+    public HttpResponse contentTypeIfNotSet(CharSequence contentType) {
         if (!headers.containsKey(CONTENT_TYPE)) {
             header(CONTENT_TYPE, contentType);
         }
@@ -130,7 +130,7 @@ public class HttpResponse {
     }
 
 
-    HttpResponse contentLengthIfNotSet(int length) {
+    public HttpResponse contentLengthIfNotSet(int length) {
         if (!headers.containsKey("content-length")) {
             header("content-length", length);
         }

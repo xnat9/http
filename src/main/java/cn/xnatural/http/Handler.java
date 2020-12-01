@@ -9,31 +9,31 @@ public interface Handler {
 
     /**
      * 逻辑处理
-     * @param ctx
+     * @param hCtx
      */
-    void handle(HttpContext ctx);
+    void handle(HttpContext hCtx) throws Throwable;
 
 
     /**
      * 匹配的顺序, 越大越先匹配
      * @return
      */
-    default double order() { return 0d; }
+    default double getOrder() { return 0d; }
 
 
     /**
      * Handler 类型
      * @return
      */
-    default String type() { return Handler.class.getSimpleName(); }
+    default String getType() { return Handler.class.getSimpleName(); }
 
 
     /**
      * 匹配
-     * @param ctx
+     * @param hCtx
      * @return
      */
-    default boolean match(HttpContext ctx) { return false; }
+    default boolean match(HttpContext hCtx) { return false; }
 
 
     /**

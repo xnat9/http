@@ -1,29 +1,31 @@
 package cn.xnatural.http;
 
+import java.util.Objects;
+import java.util.stream.Collectors;
+
 /**
  * 路径处理器
  */
-abstract class PathHandler extends Handler {
+abstract class PathHandler implements Handler {
 
     abstract String path();
 
 
     // 路径块. /test/pp -> ['test', 'pp']
-    private String[] _pieces;
-    protected String[] pieces() {
-        if (_pieces != null) return _pieces;
+    private LazySupplier<String[]> _pieces = new LazySupplier<>(() -> {
         String p = path();
         if (p == null) throw new IllegalArgumentException("PathHandler path must not be null");
-        if (p == "/")  _pieces = new String[]{"/"};
-        else _pieces = extract(p).split("/");
-        return _pieces;
+        if (p == "/") return new String[]{"/"};
+        return Handler.extract(p).split("/");
+    });
+
+    protected String[] pieces() {
+        return _pieces.get();
     }
 
 
     // 匹配的先后顺序, 越大越先匹配
-    private Double _priority;
-    protected double priority() {
-        if (_priority != null) return _priority;
+    private LazySupplier<Double> _order = new LazySupplier<>(() -> {
         if (pieces() == null) return Double.MAX_VALUE;
         double i = pieces().length;
         for (String piece : pieces()) {
@@ -37,39 +39,52 @@ abstract class PathHandler extends Handler {
             i += 0.1d;
         }
         return i;
+    });
+
+    @Override
+    public double getOrder() {
+        return _order.get();
     }
 
 
     @Override
-    double order() { return priority(); }
+    public String getType() {
+        return PathHandler.class.getSimpleName();
+    }
 
 
+    /**
+     * 路径匹配
+     *
+     * @param hCtx
+     * @return
+     */
     @Override
-    String type() { return PathHandler.class.getSimpleName(); }
-
-
-    @Override
-    boolean match(HttpContext ctx) {
-        if (pieces().length > ctx.pieces.length) return false;
-        for (int i = 0; i < pieces.length; i++) {
-            if (pieces[i].startsWith(":")) {
-                int index = pieces[i].indexOf('.');
-                if (index == -1) {
+    public boolean match(HttpContext hCtx) {
+        // 不匹配: 请求路径片 少于 当前handler路径片
+        if (hCtx.pieces.size() < pieces().length) return false;
+        for (int i = 0; i < pieces().length; i++) { // 依次遍历路径的每个分片进行匹配
+            if (pieces()[i].startsWith(":")) { // 路径变量
+                int index = pieces()[i].indexOf('.');
+                if (index == -1) { // 冒号变量片. 例: ":fName"
                     String v;
-                    if ((i + 1) == pieces.length && ctx.pieces.length > pieces.length) { // 最后一个
-                        v = ctx.pieces.drop(i).join('/');
-                    } else v = ctx.pieces[i];
-                    ctx.pathToken.put(pieces[i].substring(1), v);
-                } else {
-                    int index2 = ctx.pieces[i].indexOf('.');
-                    if (index2 > 0 && pieces[i].substring(index) == ctx.pieces[i].substring(index2)) {
-                        ctx.pathToken.put(pieces[i].substring(1, index), ctx.pieces[i].substring(0, index2));
+                    if ((i + 1) == pieces().length && hCtx.pieces.size() > pieces().length) {
+                        // 最后一个. 例: 请求路径: /p1/p2/p3, 当前Handler路径: /p2/:var, 则var路径变量的值为: p2/p3
+                        v = hCtx.pieces.stream().skip(i).collect(Collectors.joining("/"));
+                    } else v = hCtx.pieces.get(i);
+                    hCtx.pathToken.put(pieces()[i].substring(1), v); // 填充路径变量
+                } else { // 冒号变量片. 例: ":fName.js"
+                    int index2 = hCtx.pieces.get(i).indexOf('.');
+                    if (index2 > 0 && Objects.equals(pieces()[i].substring(index), hCtx.pieces.get(i).substring(index2))) {
+                        hCtx.pathToken.put(pieces()[i].substring(1, index), hCtx.pieces.get(i).substring(0, index2)); // 填充路径变量
                     } else return false;
                 }
-            } else if (pieces[i] != ctx.pieces[i]) {
-                ctx.pathToken.clear();
+            } else if (!Objects.equals(pieces()[i], hCtx.pieces.get(i))) {// 路径不匹配: 只有要一个路径片不一样
+                hCtx.pathToken.clear();
                 return false;
             }
         }
         return true;
     }
+
+}

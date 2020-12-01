@@ -21,30 +21,30 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * http 请求 处理上下文
  */
 public class HttpContext {
-    public final           HttpRequest  request;
-    public final HttpResponse           response   = new HttpResponse();
-    protected final HttpAioSession      aioSession;
-    protected final HttpServer          server;
+    public final           HttpRequest            request;
+    public final HttpResponse                     response  = new HttpResponse();
+    protected final HttpAioSession                aioSession;
+    protected final HttpServer                    server;
     /**
      * 路径变量值映射
      */
-    protected final           Map<String, Object> pathToken  = new HashMap<>(7);
+    protected final           Map<String, Object> pathToken = new HashMap<>(7);
     /**
      * 路径块, 用于路径匹配
      */
-    protected final LinkedList<String>                  pathPieces = new LinkedList<>();
+    protected final LinkedList<String>            pieces    = new LinkedList<>();
     /**
      * 是否已关闭
      */
-    protected final AtomicBoolean       closed     = new AtomicBoolean(false);
+    protected final AtomicBoolean                 closed    = new AtomicBoolean(false);
     /**
      * 请求属性集
      */
-    protected final Map<String, Object> attrs      = new ConcurrentHashMap<>();
+    protected final Map<String, Object>           attrs     = new ConcurrentHashMap<>();
     /**
      * session 数据
      */
-    protected final Map<String, Object> sessionData;
+    protected final Map<String, Object>           sessionData;
 
 
     /**
@@ -60,12 +60,12 @@ public class HttpContext {
         this.server = server;
         this.sessionData = sessionDelegate;
 
-        if ("/".equals(request.path())) this.pathPieces.add("/");
+        if ("/".equals(request.getPath())) this.pieces.add("/");
         else {
-            for (String piece : Handler.extract(request.path()).split("/")) {
-                pathPieces.add(piece);
+            for (String piece : Handler.extract(request.getPath()).split("/")) {
+                pieces.add(piece);
             }
-            if (request.path().endsWith("/")) this.pathPieces.add("/");
+            if (request.getPath().endsWith("/")) this.pieces.add("/");
         }
     }
 
@@ -73,7 +73,7 @@ public class HttpContext {
     /**
      * 关闭
      */
-    void close() {
+    public void close() {
         if (closed.compareAndSet(false, true)) {
             aioSession.close();
         }
@@ -187,7 +187,7 @@ public class HttpContext {
         if (!f) throw new RuntimeException("Already submit response");
         long spend = System.currentTimeMillis() - request.createTime.getTime();
         if (spend > server.getInteger("warnTimeout", 5) * 1000) { // 请求超时警告
-            HttpServer.log.warn("Request timeout '" + request.id() + "', path: " + request.path() + " , spend: " + spend + "ms");
+            HttpServer.log.warn("Request timeout '" + request.getId() + "', path: " + request.getPath() + " , spend: " + spend + "ms");
         }
         
         try {
@@ -203,7 +203,7 @@ public class HttpContext {
                 aioSession.send(ByteBuffer.wrap((preRespStr() + body).getBytes(server._charset.get())));
             } else if (body instanceof ApiResp) {
                 ((ApiResp) body).setMark((String) param("mark"));
-                ((ApiResp) body).setTraceNo(request.id());
+                ((ApiResp) body).setTraceNo(request.getId());
                 body = JSON.toJSONString(body, SerializerFeature.WriteMapNullValue);
                 response.contentTypeIfNotSet("application/json");
                 aioSession.send(ByteBuffer.wrap((preRespStr() + body).getBytes(server._charset.get())));
@@ -335,9 +335,9 @@ public class HttpContext {
      */
     public Map<String, Object> params() {
         Map<String, Object> params = new HashMap();
-        params.putAll(request.jsonParams());
-        params.putAll(request.formParams());
-        params.putAll(request.queryParams());
+        params.putAll(request.getJsonParams());
+        params.putAll(request.getFormParams());
+        params.putAll(request.getQueryParams());
         params.putAll(pathToken);
         return params;
     }
@@ -360,15 +360,15 @@ public class HttpContext {
     public <T> T param(String pName, Class<T> type) {
         if (type != null && HttpContext.class.isAssignableFrom(type)) return (T) this;
         Object v = pathToken.get(pName);
-        if (v == null) v = request.queryParams().get(pName);
-        if (v == null) v = request.formParams().get(pName);
-        if (v == null) v = request.jsonParams().get(pName);
+        if (v == null) v = request.getQueryParams().get(pName);
+        if (v == null) v = request.getFormParams().get(pName);
+        if (v == null) v = request.getJsonParams().get(pName);
         if (v == null && type != null && type.isArray()) { // 数组参数名后边加个[]
             pName = pName + "[]";
             v = pathToken.get(pName);
-            if (v == null) v = request.queryParams().get(pName);
-            if (v == null) v = request.formParams().get(pName);
-            if (v == null) v = request.jsonParams().get(pName);
+            if (v == null) v = request.getQueryParams().get(pName);
+            if (v == null) v = request.getFormParams().get(pName);
+            if (v == null) v = request.getJsonParams().get(pName);
         }
         if (type == null) return (T) v;
         else if (v == null) return null;

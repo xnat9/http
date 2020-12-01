@@ -34,7 +34,7 @@ public class HttpDecoder {
     protected Part        curPart;
     protected LazySupplier<String> boundary = new LazySupplier<>(() -> {
         if (request == null) return null;
-        String ct = request.contentType();
+        String ct = request.getContentType();
         if (ct == null) return null;
         if (ct.toUpperCase().contains("multipart/form-data")) {
             return ct.split(";")[1].split("=")[1];
@@ -115,7 +115,7 @@ public class HttpDecoder {
         do {
             String headerLine = readLine(buf);
             if (headerLine == null) break;
-            if ("\r" == headerLine) return true; // 请求头结束
+            if ("\r".equals(headerLine)) return true; // 请求头结束
             int index = headerLine.indexOf(":");
             request.headers.put(headerLine.substring(0, index).toLowerCase(), headerLine.substring(index + 1).trim());
         } while (true);
@@ -130,7 +130,7 @@ public class HttpDecoder {
      * @param buf
      */
     protected boolean body(ByteBuffer buf) throws Exception {
-        String ct = request.contentType();
+        String ct = request.getContentType();
 
         if (ct == null || ct.isEmpty()) return true; // get 请求 有可能没得 body
         if (ct.contains("application/json") || ct.contains("application/x-www-form-urlencoded") || ct.contains("text/plain")) {
@@ -164,8 +164,8 @@ public class HttpDecoder {
             do { // 遍历读每个part
                 String line = readLine(buf);
                 if (line == null) return false;
-                if (line == "\r") continue;
-                if (line == endLine || line == (endLine + "\r")) return true; // 结束行
+                if ("\r".equals(line)) continue;
+                if (line.equals(endLine) || line.equals(endLine + "\r")) return true; // 结束行
                 curPart = new Part(); curPart.boundary = line;
 
                 // 读part的header
@@ -204,15 +204,15 @@ public class HttpDecoder {
         do { // 每个part的header
             String line = readLine(buf);
             if (null == line) return false;
-            else if ("\r" == line) {
+            else if ("\r".equals(line)) {
                 curPart.headerComplete = true;
                 return true;
             } else if (line.toUpperCase().contains("content-disposition")) {
                 for (String entry : line.split(":")[1].split(";")) {
                     String[] arr = entry.split("=");
                     if (arr.length > 1) {
-                        if (arr[0].trim() == "name") curPart.name = arr[1].replace("\"", "").replace("\r", "");
-                        else if (arr[0].trim() == "filename") {
+                        if ("name".equals(arr[0].trim())) curPart.name = arr[1].replace("\"", "").replace("\r", "");
+                        else if ("filename".equals(arr[0].trim())) {
                             curPart.filename = arr[1].replace("\"", "").replace("\r", "");
                         }
                     }
@@ -232,7 +232,7 @@ public class HttpDecoder {
             int index = indexOf(buf, ("\r\n--" + boundary).getBytes("utf-8"));
 
             if (curPart.tmpFile == null) { // 临时存放文件
-                curPart.tmpFile = File.createTempFile(request.id(), FileData.extractFileExtension(curPart.filename));
+                curPart.tmpFile = File.createTempFile(request.getId(), FileData.extractFileExtension(curPart.filename));
                 request.session.tmpFiles.add(curPart.tmpFile);
                 if (multiForm.containsKey(curPart.name)) { // 有多个值
                     Object v = multiForm.get(curPart.name);
@@ -253,7 +253,7 @@ public class HttpDecoder {
                 return false;
             } else {
                 int length = index - buf.position();
-                if (length == 0 && curPart.filename == "") {// 未上传的情况
+                if (length == 0 && curPart.filename.isEmpty()) {// 未上传的情况
                     request.session.tmpFiles.remove(curPart.tmpFile);
                     curPart.tmpFile.delete();
                     Object v = multiForm.remove(curPart.name);

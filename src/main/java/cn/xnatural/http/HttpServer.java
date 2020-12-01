@@ -8,10 +8,11 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
-import java.net.InetSocketAddress;
-import java.net.StandardSocketOptions;
+import java.net.*;
 import java.nio.channels.*;
 import java.security.AccessControlException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
 import java.util.*;
@@ -27,28 +28,69 @@ import java.util.function.Supplier;
  */
 public class HttpServer {
     static final Logger log = LoggerFactory.getLogger(HttpServer.class);
-    protected final CompletionHandler<AsynchronousSocketChannel, HttpServer> handler = new AcceptHandler();
+    /**
+     * jdk aio 基类 {@link AsynchronousServerSocketChannel}
+     */
     protected       AsynchronousServerSocketChannel                          ssc;
-    protected final       LazySupplier<String>                _hpCfg = new LazySupplier<>(() -> getStr("hp", ":7070"));
-    protected final       LazySupplier<Integer>               _port = new LazySupplier<>(() -> Integer.valueOf(_hpCfg.get().split(":")[1]));
-    protected final LazySupplier<String> _charset = new LazySupplier<>(() -> getStr("charset", "utf-8"));
-    protected final LazySupplier<String> _sessionCookieName = new LazySupplier<>(() -> getStr("sessionCookieName", "sId"));
-    protected final Chain                  chain        = new Chain(this);
-    protected final List                   ctrls        = new LinkedList<>();
-    // 是否可用
-    protected boolean                                enabled      = false;
-    protected final Counter counter = new Counter();
-    // 当前连接数
-    protected  final Queue<HttpAioSession> connections  = new ConcurrentLinkedQueue<>();
-    protected final LazySupplier<Set<String>>            _ignoreLogSuffix = new LazySupplier<>(() -> {
+    /**
+     * {@link AsynchronousServerSocketChannel} aio 连接器
+     */
+    protected final CompletionHandler<AsynchronousSocketChannel, HttpServer> handler            = new AcceptHandler();
+    /**
+     * 配置: hp=[host]:port
+     */
+    protected final       LazySupplier<String>                               _hpCfg             = new LazySupplier<>(() -> getStr("hp", ":7070"));
+    /**
+     * 端口
+     */
+    protected final       LazySupplier<Integer>                              _port              = new LazySupplier<>(() -> Integer.valueOf(_hpCfg.get().split(":")[1]));
+    /**
+     * 请求/响应 io 字节编码
+     */
+    protected final LazySupplier<String>                                     _charset           = new LazySupplier<>(() -> getStr("charset", "utf-8"));
+    /**
+     * session cookie name
+     */
+    protected final LazySupplier<String>                                     _sessionCookieName = new LazySupplier<>(() -> getStr("sessionCookieName", "sId"));
+    /**
+     * mvc: m层执行链
+     */
+    protected final Chain                                                    chain              = new Chain(this);
+    /**
+     * mvc: m层(控制器)
+     */
+    protected final List                      ctrls              = new LinkedList<>();
+    /**
+     * 是否可用
+     */
+    protected boolean                         enabled            = false;
+    /**
+     * 当前连接
+     */
+    protected  final Queue<HttpAioSession>    connections        = new ConcurrentLinkedQueue<>();
+    /**
+     * 请求计数器
+     */
+    protected final Counter                   counter            = new Counter();
+    /**
+     * 忽略打印的请求路径后缀
+     */
+    protected final LazySupplier<Set<String>> _ignoreLogSuffix   = new LazySupplier<>(() -> {
         final Set<String> set = new HashSet<>(Arrays.asList(".js", ".css", ".html", ".vue", ".png", ".ttf", ".woff", ".woff2", "favicon.ico", ".map"));
         for (String suffix : getStr("ignoreLogUrlSuffix", "").split(",")) {
             set.add(suffix);
         }
         return set;
     });
+    /**
+     * 配置属性
+     */
     protected final Map<String, Object> attrs;
+    /**
+     * 线程池执行器
+     */
     protected final ExecutorService exec;
+
 
     /**
      * 创建
@@ -57,12 +99,13 @@ public class HttpServer {
      *              writeTimeout: 数据写入超时时间. 单位:毫秒
      *              backlog: 排队连接
      *              connection.maxIdle: 连接最大存活时间
+     *              maxConnection: 最大连接数
      * @param exec
      */
     public HttpServer(Map<String, Object> attrs, ExecutorService exec) {
         this.attrs = attrs == null ? new HashMap<>() : attrs;
         this.exec = exec == null ? new ThreadPoolExecutor(
-                8,16, 1, TimeUnit.HOURS,
+                8,16, 2, TimeUnit.HOURS,
                 new LinkedBlockingQueue<>(),
                 new ThreadFactory() {
                     final AtomicInteger i = new AtomicInteger(1);
@@ -74,9 +117,17 @@ public class HttpServer {
         ) : exec;
     }
 
+    /**
+     * {@link #HttpServer(Map, ExecutorService)}
+     */
+    public HttpServer() { this(null, null); }
 
+
+    /**
+     * 服务启动
+     */
     @EL(name = "sys.starting", async = true)
-    public void start() {
+    public HttpServer start() {
         if (ssc != null) throw new RuntimeException("HttpServer is already running");
         try {
             AsynchronousChannelGroup cg = AsynchronousChannelGroup.withThreadPool(exec);
@@ -85,8 +136,7 @@ public class HttpServer {
             ssc.setOption(StandardSocketOptions.SO_RCVBUF, getInteger("so_revbuf", 1024 * 1024 * 4));
 
             String host = _hpCfg.get().split(":")[0];
-            InetSocketAddress addr = new InetSocketAddress(getPort());
-            if (host != null && !host.isEmpty()) {addr = new InetSocketAddress(host, getPort());}
+            InetSocketAddress addr = (host != null && !host.isEmpty()) ? new InetSocketAddress(host, getPort()) : new InetSocketAddress(getPort());
 
             ssc.bind(addr, getInteger("backlog", 128));
             initChain();
@@ -96,13 +146,18 @@ public class HttpServer {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+        return this;
     }
 
 
+    /**
+     * 服务停止
+     */
     @EL(name = "sys.stopping", async = true)
     public void stop() {
         enabled = false;
-        try { ssc.close(); } catch (IOException e) {/** ignore **/}
+        try { Thread.sleep(1000L); ssc.close(); } catch (Exception e) {/** ignore **/}
+        exec.shutdown();
     }
 
 
@@ -114,13 +169,13 @@ public class HttpServer {
         HttpContext hCtx = null;
         try {
             // 打印请求
-            if (_ignoreLogSuffix.get().stream().noneMatch((suffix) -> request.path().endsWith(suffix))) {
-                log.info("Start Request '{}': {}. from: " + request.session.channel.getRemoteAddress().toString(), request.id(), request.rowUrl);
+            if (_ignoreLogSuffix.get().stream().noneMatch((suffix) -> request.getPath().endsWith(suffix))) {
+                log.info("Start Request '{}': {}. from: " + request.session.channel.getRemoteAddress().toString(), request.getId(), request.rowUrl);
             }
             counter.increment();
             hCtx = new HttpContext(request, this, sessionDelegate());
             if (enabled) {
-                if (app.sysLoad == 10 || connections.size() > getInteger("maxConnections", 128)) { // 限流
+                if (connections.size() > getInteger("maxConnection", 128)) { // 限流
                     hCtx.response.status(503);
                     hCtx.render(ApiResp.fail("服务忙, 请稍后..."));
                     hCtx.close();
@@ -142,9 +197,7 @@ public class HttpServer {
      * session 数据 委托对象
      * @return
      */
-    protected Map<String, Object> sessionDelegate() {
-        return null;
-    }
+    protected Map<String, Object> sessionDelegate() { return null; }
 
 
     /**
@@ -170,11 +223,10 @@ public class HttpServer {
      */
     protected void initChain() {
         for (Object ctrl : ctrls) {
-            // exposeBean(ctrl);
-            Ctrl anno = ctrl.getClass().getAnnotation(Ctrl.class);
-            if (anno != null) {
-                if (anno.prefix() != null && !anno.prefix().isEmpty()) {
-                    chain.prefix(anno.prefix(), (ch) -> parseCtrl(ctrl, ch));
+            Ctrl aCtrl = ctrl.getClass().getAnnotation(Ctrl.class);
+            if (aCtrl != null) {
+                if (aCtrl.prefix() != null && !aCtrl.prefix().isEmpty()) {
+                    chain.prefix(aCtrl.prefix(), (ch) -> parseCtrl(ctrl, ch));
                 } else parseCtrl(ctrl, chain);
             } else {
                 log.warn("@Ctrl Not Fund in: " + ctrl.getClass().getName());
@@ -185,12 +237,12 @@ public class HttpServer {
 
     /**
      * 解析 @Ctrl 类
-     * @param ctrl
-     * @param chain
+     * @param ctrl 控制层类
+     * @param chain 解析到哪个 {@link Chain}
      */
     protected void parseCtrl(Object ctrl, Chain chain) {
         Ctrl aCtrl = ctrl.getClass().getAnnotation(Ctrl.class);
-        Consumer<Method> parser = method -> {
+        Consumer<Method> parser = method -> { // Handler 解析函数
             Path aPath = method.getAnnotation(Path.class);
             if (aPath != null) { // 路径映射
                 if (aPath.path().length < 1) {
@@ -201,15 +253,15 @@ public class HttpServer {
                 method.setAccessible(true);
                 for (String path : aPath.path()) {
                     if (path == null || path.isEmpty()) {
-                        log.error("@Path path must not be empty. {}#{}", ctrl.getClass(), method.getName());
+                        log.error("@Path path must not be empty. {}#{}", ctrl.getClass().getName(), method.getName());
                         return;
                     }
                     log.info("Request mapping: /" + (((aCtrl.prefix() != null && !aCtrl.prefix().isEmpty()) ? aCtrl.prefix() + "/" : "") + ("/".equals(path) ? "" : path)));
                     chain.method(aPath.method(), path, aPath.consumer(), hCtx -> { // 实际@Path 方法 调用
                         try {
-                            Object result = method.invoke(ctrl, Arrays.stream(ps).map((p) -> hCtx.param(p.name, p.type)).toArray());
+                            Object result = method.invoke(ctrl, Arrays.stream(ps).map((p) -> hCtx.param(p.getName(), p.getType())).toArray());
                             if (!void.class.isAssignableFrom(method.getReturnType())) {
-                                log.debug("Invoke Handler '" + (ctrl.getClass().getName() + '#' + method.getName()) + "', result: " + result);
+                                log.debug("Invoke Handler '{}#{}', result: {}", ctrl.getClass().getName(), method.getName(), result);
                                 hCtx.render(result);
                             }
                         } catch (InvocationTargetException ex) {
@@ -230,10 +282,11 @@ public class HttpServer {
                 Parameter[] ps = method.getParameters();
                 method.setAccessible(true);
                 chain.filter(hCtx -> { // 实际@Filter 方法 调用
-                        method.invoke(ctrl, Arrays.stream(ps).map((p) -> hCtx.param(p.name, p.type)).toArray());
+                        method.invoke(ctrl, Arrays.stream(ps).map((p) -> hCtx.param(p.getName(), p.getType())).toArray());
                 }, aFilter.order());
                 return;
             }
+
             WS aWS = method.getAnnotation(WS.class);
             if (aWS != null) { // WS(websocket) 处理
                 if (!void.class.isAssignableFrom(method.getReturnType())) {
@@ -245,26 +298,26 @@ public class HttpServer {
                     return;
                 }
                 log.info("WebSocket: /" + (((aCtrl.prefix() != null && !aCtrl.prefix().isEmpty()) ? aCtrl.prefix() + "/" : "") + aWS.path()));
-                chain.ws(aWS.path(), ctx -> {
+                chain.ws(aWS.path(), hCtx -> {
                     try {
                         // 响应握手
-                        ctx.response.status(101);
-                        ctx.response.header("Upgrade", "websocket");
-                        ctx.response.header("Connection", "Upgrade");
+                        hCtx.response.status(101);
+                        hCtx.response.header("Upgrade", "websocket");
+                        hCtx.response.header("Connection", "Upgrade");
 
-                        byte[] bs1 = ctx.request.getHeader("Sec-WebSocket-Key").getBytes("utf-8");
+                        byte[] bs1 = hCtx.request.getHeader("Sec-WebSocket-Key").getBytes("utf-8");
                         byte[] bs2 = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes("utf-8");
                         byte[] bs = new byte[bs1.length + bs2.length];
                         System.arraycopy(bs1, 0, bs, 0, bs1.length);
                         System.arraycopy(bs2, 0, bs, bs1.length, bs2.length);
-                        ctx.response.header("Sec-WebSocket-Accept", Base64.getEncoder().encodeToString(Utils.sha1(bs)));
-                        ctx.response.header("Sec-WebSocket-Location", "ws://" + ep.fire("web.hp") + "/" + aCtrl.prefix() + "/" + aWS.path())
-                        ctx.render(null);
+                        hCtx.response.header("Sec-WebSocket-Accept", Base64.getEncoder().encodeToString(sha1(bs)));
+                        hCtx.response.header("Sec-WebSocket-Location", "ws://" + getHp() + "/" + aCtrl.prefix() + "/" + aWS.path());
+                        hCtx.render(null);
 
-                        method.invoke(ctrl, ctx.aioSession.ws);
+                        method.invoke(ctrl, hCtx.aioSession.ws);
                     } catch (InvocationTargetException ex) {
                         log.error("", ex.getCause());
-                        ctx.close();
+                        hCtx.close();
                     }
                 });
                 return;
@@ -292,16 +345,16 @@ public class HttpServer {
     /**
      * 错误处理
      * @param ex
-     * @param ctx
+     * @param hCtx
      */
-    public void errHandle(Exception ex, HttpContext ctx) {
+    protected void errHandle(Throwable ex, HttpContext hCtx) {
         if (ex instanceof AccessControlException) {
-            log.error("Request Error '" + ctx.request.id() + "', url: " + ctx.request.rowUrl() + ", " + ex.getMessage());
-            ctx.render(ApiResp.of("403", ex.getMessage()));
+            log.error("Request Error '" + hCtx.request.getId() + "', url: " + hCtx.request.getRowUrl() + ", " + ex.getMessage());
+            hCtx.render(ApiResp.of("403", ex.getMessage()));
             return;
         }
-        log.error("Request Error '" + ctx.request.id() + "', url: " + ctx.request.rowUrl, ex);
-        ctx.render(ApiResp.of(ctx.respCode ? ctx.respCode : "01", ctx.respMsg?:(ex.class.simpleName + (ex.message ? ": $ex.message" : ""))))
+        log.error("Request Error '" + hCtx.request.getId() + "', url: " + hCtx.request.getRowUrl(), ex);
+        hCtx.render(ApiResp.fail((ex.getClass().getSimpleName() + (ex.getMessage() != null ? ": " + ex.getMessage() : ""))));
     }
 
 
@@ -331,7 +384,7 @@ public class HttpServer {
                 };
                 connections.offer(se);
                 InetSocketAddress rAddr = ((InetSocketAddress) channel.getLocalAddress());
-                log.debug("New HTTP(AIO) Connection from: " + rAddr.getHostString() + ":" + rAddr.getPort() + ", connected: " + connections.size())
+                log.debug("New HTTP(AIO) Connection from: " + rAddr.getHostString() + ":" + rAddr.getPort() + ", connected: " + connections.size());
                 se.start();
                 if (connections.size() > 10) clean();
             } catch (IOException e) {
@@ -347,11 +400,77 @@ public class HttpServer {
     }
 
 
-    @EL(name = {"http.hp", "web.hp"}, async = false)
-    public String getHp() {
-        String ip = _hpCfg.get().split(":")[0];
-        if ("localhost".equals(ip)) {ip = ipv4();}
-        return ip + ":" + _port.get();
+    /**
+     * 清除已关闭或已过期的连接
+     */
+    @EL(name = "sys.heartbeat", async = true)
+    protected void clean() {
+        if (connections.isEmpty()) return;
+        int size = connections.size();
+        long httpExpire = Duration.ofSeconds(getInteger("connection.maxIdle",
+                ((Supplier<Integer>) () -> {
+                    if (size > 80) return 60;
+                    if (size > 50) return 120;
+                    if (size > 30) return 180;
+                    if (size > 20) return 300;
+                    if (size > 10) return 400;
+                    return 600;
+                }).get()
+        )).toMillis();
+        long wsExpire = Duration.ofSeconds(getInteger("wsConnection.maxIdle",
+                ((Supplier<Integer>) () -> {
+                    if (size > 60) return 300;
+                    if (size > 40) return 600;
+                    if (size > 20) return 1200;
+                    return 1800;
+                }).get()
+        )).toMillis();
+
+        int limit = ((Supplier<Integer>) () -> {
+            if (size > 80) return 8;
+            if (size > 50) return 5;
+            if (size > 30) return 3;
+            return 2;
+        }).get();
+        for (Iterator<HttpAioSession> itt = connections.iterator(); itt.hasNext() && limit > 0; ) {
+            HttpAioSession se = itt.next();
+            if (se == null) {itt.remove(); break;}
+            if (!se.channel.isOpen()) {
+                itt.remove(); se.close();
+                log.info("Cleaned unavailable {}: " + se + ", connected: " + connections.size(), se.ws != null ? "WsAioSession" : "HttpAioSession");
+            } else if (se.ws != null && System.currentTimeMillis() - se.lastUsed > wsExpire) {
+                limit--; itt.remove(); se.ws.close();
+                log.debug("Closed expired WsAioSession: " + se + ", connected: " + connections.size());
+            } else if (System.currentTimeMillis() - se.lastUsed > httpExpire) {
+                limit--; itt.remove(); se.close();
+                log.debug("Closed expired HttpAioSession: " + se + ", connected: " + connections.size());
+            }
+        }
+    }
+
+
+    /**
+     * 获取本机 ip 地址
+     * @return
+     */
+    protected String ipv4() {
+        try {
+            for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements(); ) {
+                NetworkInterface current = en.nextElement();
+                if (!current.isUp() || current.isLoopback() || current.isVirtual()) continue;
+                Enumeration<InetAddress> addresses = current.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress addr = addresses.nextElement();
+                    if (addr.isLoopbackAddress()) continue;
+                    if (addr instanceof Inet4Address) {
+                        return addr.getHostAddress();
+                    }
+                }
+            }
+        } catch (SocketException e) {
+            log.error("", e);
+        }
+        return null;
     }
 
 
@@ -400,52 +519,16 @@ public class HttpServer {
 //    }
 
 
-    /**
-     * 清除已关闭或已过期的连接
-     */
-    @EL(name = "sys.heartbeat", async = true)
-    protected void clean() {
-        if (connections.isEmpty()) return;
-        int size = connections.size();
-        long httpExpire = Duration.ofSeconds(getInteger("connection.maxIdle",
-                ((Supplier<Integer>) () -> {
-                    if (size > 80) return 60;
-                    if (size > 50) return 120;
-                    if (size > 30) return 180;
-                    if (size > 20) return 300;
-                    if (size > 10) return 400;
-                    return 600;
-                }).get()
-        )).toMillis();
-        long wsExpire = Duration.ofSeconds(getInteger("wsConnection.maxIdle",
-                ((Supplier<Integer>) () -> {
-                    if (size > 60) return 300;
-                    if (size > 40) return 600;
-                    if (size > 20) return 1200;
-                    return 1800;
-                }).get()
-        )).toMillis();
 
-        int limit = ((Supplier<Integer>) () -> {
-            if (size > 80) return 8;
-            if (size > 50) return 5;
-            if (size > 30) return 3;
-            return 2;
-        }).get();
-        for (Iterator<HttpAioSession> itt = connections.iterator(); itt.hasNext() && limit > 0; ) {
-            HttpAioSession se = itt.next();
-            if (se == null) {itt.remove(); break;}
-            if (!se.chennel.isOpen()) {
-                itt.remove(); se.close();
-                log.info("Cleaned unavailable {}: " + se + ", connected: " + connections.size(), se.ws != null ? "WsAioSession" : "HttpAioSession");
-            } else if (se.ws && System.currentTimeMillis() - se.lastUsed > wsExpire) {
-                limit--; itt.remove(); se.ws.close();
-                log.debug("Closed expired WsAioSession: " + se + ", connected: " + connections.size());
-            } else if (System.currentTimeMillis() - se.lastUsed > httpExpire) {
-                limit--; itt.remove(); se.close();
-                log.debug("Closed expired HttpAioSession: " + se + ", connected: " + connections.size());
-            }
-        }
+    /**
+     * 返回 host:port
+     * @return
+     */
+    @EL(name = {"http.hp", "web.hp"}, async = false)
+    public String getHp() {
+        String ip = _hpCfg.get().split(":")[0];
+        if ("localhost".equals(ip)) {ip = ipv4();}
+        return ip + ":" + _port.get();
     }
 
 
@@ -461,6 +544,13 @@ public class HttpServer {
      * @return
      */
     public String getCharset() { return _charset.get(); }
+
+
+    /**
+     * 得到所有控制层对象
+     * @return
+     */
+    public List getCtrls() { return new LinkedList(ctrls); }
 
 
     public Object getAttr(String key) { return attrs.get(key); }
@@ -497,6 +587,22 @@ public class HttpServer {
         if (r == null) return defaultValue;
         else if (r instanceof Boolean) return ((Boolean) r);
         else return Boolean.valueOf(r.toString());
+    }
+
+
+    /**
+     * sha1 加密
+     * @param bs
+     * @return
+     */
+    static byte[] sha1(byte[] bs) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            digest.update(bs);
+            return digest.digest();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
     }
 
 

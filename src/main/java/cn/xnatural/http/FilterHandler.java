@@ -3,13 +3,13 @@ package cn.xnatural.http;
 /**
  * Filter
  */
-abstract class FilterHandler extends Handler {
+abstract class FilterHandler implements Handler {
 
 
     @Override
-    String type() { return FilterHandler.class.getSimpleName(); }
+    public String getType() { return FilterHandler.class.getSimpleName(); }
 
 
     @Override
-    boolean match(HttpContext ctx) { return true; }
+    public boolean match(HttpContext ctx) { return true; }
 }
