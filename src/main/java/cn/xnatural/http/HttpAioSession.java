@@ -1,8 +1,5 @@
 package cn.xnatural.http;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -13,11 +10,12 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static cn.xnatural.http.HttpServer.log;
+
 /**
  * Http AIO 数据流
  */
 public class HttpAioSession {
-    protected static final Logger                    log         = LoggerFactory.getLogger(HttpAioSession.class);
     protected final        AsynchronousSocketChannel channel;
     protected final                ReadHandler                  readHandler = new ReadHandler();
     public HttpServer                server;
@@ -27,7 +25,9 @@ public class HttpAioSession {
     // 每次接收消息的内存空间(文件上传大小限制)
     protected final LazySupplier<ByteBuffer> _buf = new LazySupplier<>(() -> ByteBuffer.allocate(server.getInteger("maxMsgSize", 1024 * 1024 * 1)));
     // 不为空代表是WebSocket
-    WebSocket ws;
+    protected WebSocket ws;
+    // 当前解析的请求
+    protected HttpRequest request;
     // 临时文件
     protected final List<File> tmpFiles = new LinkedList<>();
 
@@ -61,6 +61,10 @@ public class HttpAioSession {
     }
 
 
+    /**
+     * 子类重写, 清除对当前{@link HttpAioSession}的引用
+     * @param session
+     */
     protected void doClose(HttpAioSession session) {}
 
 
@@ -95,48 +99,56 @@ public class HttpAioSession {
     }
 
 
+    /**
+     * 读数据, 解析数据
+     * @param buf
+     */
+    protected void doRead(ByteBuffer buf) {
+        if (ws != null) { // 是 WebSocket的情况
+            try {
+                ws.decoder.decode(buf);
+            } catch (Exception ex) {
+                log.error("Web socket decode error", ex);
+                close();
+            }
+        } else { // 正常 http 请求
+            if (request == null) {request = new HttpRequest(HttpAioSession.this); }
+            try {
+                request.decoder.decode(buf);
+            } catch (Exception ex) {
+                log.error("Http decode error", ex);
+                close(); return;
+            }
+            if (request.decoder.complete) {
+                if (request.decoder.websocket) { // 创建WebSocket 会话
+                    ws = new WebSocket(HttpAioSession.this);
+                    server.receive(request);
+                } else {
+                    HttpRequest req = request; request = null; // 接收下一个请求
+                    server.receive(req);
+                }
+            }
+        }
+    }
+
+
     @Override
     public String toString() {
         return HttpAioSession.class.getSimpleName() + "@" + Integer.toHexString(hashCode()) + "[" + channel.toString() + "]";
     }
 
 
+    /**
+     * aio 数据读数处理器
+     */
     protected class ReadHandler implements CompletionHandler<Integer, ByteBuffer> {
-        // 当前解析的请求
-        protected HttpRequest request;
 
         @Override
         public void completed(Integer count, ByteBuffer buf) {
             if (count > 0) {
                 lastUsed = System.currentTimeMillis();
                 buf.flip();
-
-                if (ws != null) { // 是 WebSocket的情况
-                    try {
-                        ws.decoder.decode(buf);
-                    } catch (Exception ex) {
-                        log.error("Web socket decode error", ex);
-                        close(); return;
-                    }
-                } else { // 正常 http 请求
-                    if (request == null) {request = new HttpRequest(HttpAioSession.this); }
-                    try {
-                        request.decoder.decode(buf);
-                    } catch (Exception ex) {
-                        log.error("Http decode error", ex);
-                        close(); return;
-                    }
-                    if (request.decoder.complete) {
-                        if (request.decoder.websocket) { // 创建WebSocket 会话
-                            ws = new WebSocket(HttpAioSession.this);
-                            server.receive(request);
-                        } else {
-                            HttpRequest req = request; request = null; // 接收下一个请求
-                            server.receive(req);
-                        }
-                    }
-                }
-
+                doRead(buf);
                 buf.compact();
                 // 避免 ReadPendingException
                 read();

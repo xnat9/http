@@ -5,9 +5,14 @@ import java.util.stream.Collectors;
 
 /**
  * 路径处理器
+ * 一个请求只对应一个 {@link PathHandler}
  */
 abstract class PathHandler implements Handler {
 
+    /**
+     * 请求匹配的路径
+     * @return
+     */
     abstract String path();
 
 
@@ -18,7 +23,6 @@ abstract class PathHandler implements Handler {
         if (p == "/") return new String[]{"/"};
         return Handler.extract(p).split("/");
     });
-
     protected String[] pieces() {
         return _pieces.get();
     }
@@ -40,22 +44,16 @@ abstract class PathHandler implements Handler {
         }
         return i;
     });
-
     @Override
-    public double getOrder() {
-        return _order.get();
-    }
+    public double getOrder() { return _order.get(); }
 
 
     @Override
-    public String getType() {
-        return PathHandler.class.getSimpleName();
-    }
+    public String getType() { return PathHandler.class.getSimpleName(); }
 
 
     /**
      * 路径匹配
-     *
      * @param hCtx
      * @return
      */

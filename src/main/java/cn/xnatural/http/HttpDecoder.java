@@ -1,37 +1,60 @@
 package cn.xnatural.http;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.*;
-import java.util.function.Supplier;
 
 /**
  * HTTP 解析器
  */
 public class HttpDecoder {
-    static final  Logger      log      = LoggerFactory.getLogger(HttpDecoder.class);
-    static final byte[] lineDelimiter = ((Supplier<byte[]>) () -> {
-        try {
-            return "\n".getBytes("utf-8");
-        } catch (UnsupportedEncodingException e) {
-            throw new RuntimeException(e);
-        }
-    }).get();
-
-
-    protected     HttpRequest request;
-    // 请求收到的字节长度
-    protected long        size;
-    // 解析是否完成
-    protected boolean     complete;
-    protected boolean     startLineComplete;
-    protected boolean     headerComplete;
-    protected boolean     bodyComplete;
-    // 当前读到哪个Part
-    protected Part        curPart;
+    /**
+     * 当前请求
+     */
+    protected  HttpRequest request;
+    /**
+     * 请求收到的请求体字节长度
+     */
+    protected long         bodySize;
+    /**
+     * 请求收到的请求头字节长度
+     */
+    protected long         headerSize;
+    /**
+     * 解析是否完成
+     */
+    protected boolean      complete;
+    /**
+     * 起始行是否解析完成
+     */
+    protected boolean      startLineComplete;
+    /**
+     * 请求头是否解析完成
+     */
+    protected boolean      headerComplete;
+    /**
+     * 请求体是否解析完成
+     */
+    protected boolean      bodyComplete;
+    /**
+     * 请求体包含多个 Part时: 当前读到哪个Part
+     */
+    protected Part         curPart;
+    /**
+     * 解析几次
+     */
+    protected int          decodeCount;
+    /**
+     * 是否升级到websocket
+     */
+    protected boolean      websocket;
+    /**
+     * multipart/form-data 表单数据预存.包含文件
+     */
+    protected Map<String, Object> multiForm;
+    /**
+     * 请求体包含多个 Part时: part之间的分割符
+     */
     protected LazySupplier<String> boundary = new LazySupplier<>(() -> {
         if (request == null) return null;
         String ct = request.getContentType();
@@ -41,11 +64,6 @@ public class HttpDecoder {
         }
         return null;
     });
-    // 解析几次
-    protected int decodeCount;
-    // 是否升级到websocket
-    protected boolean websocket;
-    protected Map<String, Object> multiForm;
 
 
     HttpDecoder(HttpRequest request) {
@@ -54,25 +72,27 @@ public class HttpDecoder {
 
 
     /**
-     * 解析http请求
-     *
+     * 开始解析http请求
      * @param buf
      * @return
      */
     void decode(ByteBuffer buf) throws Exception {
         decodeCount++;
+        // 1. 解析请求起始行
         if (!startLineComplete) {
             startLineComplete = startLine(buf);
         }
+        // 2. 解析请求公用头(header)
         if (startLineComplete && !headerComplete) {
             headerComplete = header(buf);
             if (headerComplete) {// 判断是否升级为 websocket
-                if ("Upgrade".equalsIgnoreCase(request.getHeader("Connection")) && "websocket".equalsIgnoreCase(request.getHeader("Upgrade"))) {
+                if ("Upgrade".equalsIgnoreCase(request.getConnection()) && "websocket".equalsIgnoreCase(request.getUpgrade())) {
                     websocket = true;
                     bodyComplete = true;
                 }
             }
         }
+        // 3. 解析请求体
         if (headerComplete && !bodyComplete) {
             bodyComplete = body(buf);
         }
@@ -85,11 +105,11 @@ public class HttpDecoder {
      *
      * @param buf
      */
-    protected boolean startLine(ByteBuffer buf) {
+    protected boolean startLine(ByteBuffer buf) throws Exception {
         String firstLine = readLine(buf);
         if (firstLine == null) { // 没有一行数据
             if (decodeCount > 1) {
-                throw new RuntimeException("HTTP start line too manny");
+                throw new Exception("HTTP start line too manny");
             }
             return false;
         }
@@ -98,10 +118,9 @@ public class HttpDecoder {
             request.method = arr[0];
             request.rowUrl = arr[1];
             request.protocol = arr[2].split("/")[0];
-            request.version = arr[2].split("/")[1];
+            request.version = arr[2].split("/")[1].replace("\r", "");
         } catch (Exception ex) {
-            log.error("非Http数据. " + firstLine);
-            throw ex;
+            throw new Exception("Error http data: " + firstLine, ex);
         }
         return true;
     }
@@ -111,16 +130,15 @@ public class HttpDecoder {
      * 解析: 请求头
      * @param buf
      */
-    protected boolean header(ByteBuffer buf) {
+    protected boolean header(ByteBuffer buf) throws Exception {
         do {
+            buf.position();
             String headerLine = readLine(buf);
             if (headerLine == null) break;
             if ("\r".equals(headerLine)) return true; // 请求头结束
             int index = headerLine.indexOf(":");
             request.headers.put(headerLine.substring(0, index).toLowerCase(), headerLine.substring(index + 1).trim());
         } while (true);
-        // [Cookie:USER_ID_ANONYMOUS=28f34d1a1137476994fda617d2777b7c; DETECTED_VERSION=1.8.1; MAIN_NAV_ACTIVE_TAB_INDEX=1; PAGINATION_PAGE_SIZE=10; mntLogin=true; name=admin; roles=admin; Cache-Control=max-age=120; uId=4028b88173142d470173142d52700000; JSESSIONID=xPzSn1KxdBnxGU2fp_jYI4vWtdSduKAB2A64Q3R4, Accept:*/*, Connection:keep-alive, User-Agent:Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.25 Safari/537.36 Core/1.70.3766.400 QQBrowser/10.6.4163.400, Host:localhost:9090, Accept-Encoding:gzip, deflate, br, Accept-Language:zh-CN,zh;q=0.9]
-        // log.info("headers: " + req.headers)
         return false;
     }
 
@@ -168,13 +186,13 @@ public class HttpDecoder {
                 if (line.equals(endLine) || line.equals(endLine + "\r")) return true; // 结束行
                 curPart = new Part(); curPart.boundary = line;
 
-                // 读part的header
+                // 读Part的header
                 boolean f = readMultipartHeader(buf);
-                if (!f) return false;
+                if (!f) return false; //数据不够
                 // 读part的值
                 f = readMultipartValue(buf);
                 if (f) {
-                    size += curPart.fd == null ? 0 : curPart.fd.getSize();
+                    bodySize += curPart.fd == null ? 0 : curPart.fd.getSize();
                     curPart = null; // 下一个 Part
                 } else return false;
             } while (true);
@@ -184,7 +202,7 @@ public class HttpDecoder {
         } else if (!curPart.valueComplete) {
             boolean f = readMultipartValue(buf);
             if (f) {
-                size += curPart.fd == null ? 0 : curPart.fd.getSize();
+                bodySize += curPart.fd == null ? 0 : curPart.fd.getSize();
                 curPart = null; // 下一个 Part
                 f = readMultipart(buf);
                 if (f) return true;
@@ -199,7 +217,7 @@ public class HttpDecoder {
      * @param buf
      * @return true: 读完, false 未读完(数据不够)
      */
-    protected boolean readMultipartHeader(ByteBuffer buf) {
+    protected boolean readMultipartHeader(ByteBuffer buf) throws Exception {
         // 读参数名: 从header Content-Disposition 中读取参数名 和文件名
         do { // 每个part的header
             String line = readLine(buf);
@@ -207,7 +225,7 @@ public class HttpDecoder {
             else if ("\r".equals(line)) {
                 curPart.headerComplete = true;
                 return true;
-            } else if (line.toUpperCase().contains("content-disposition")) {
+            } else if (line.toUpperCase().contains("content-disposition")) { // part为文件
                 for (String entry : line.split(":")[1].split(";")) {
                     String[] arr = entry.split("=");
                     if (arr.length > 1) {
@@ -217,22 +235,22 @@ public class HttpDecoder {
                         }
                     }
                 }
-            }
+            } else throw new Exception("Unknown part: " + line);
         } while (true);
     }
 
 
     /**
      * 读 Multipart 中的 Value 部分
-     * @param buf
+     * @param buf 数据
      * @return true: 读完, false 未读完(数据不够)
      */
     protected boolean readMultipartValue(ByteBuffer buf) throws Exception {
-        if (curPart.filename != null) { // 当前part 是个文件, filename  可能是个空字符串
-            int index = indexOf(buf, ("\r\n--" + boundary).getBytes("utf-8"));
-
+        if (curPart.filename != null) { // 文件 Part, filename  可能是个空字符串
+            int index = indexOf(buf, ("\r\n--" + boundary).getBytes(request.session.server.getCharset()));
             if (curPart.tmpFile == null) { // 临时存放文件
                 curPart.tmpFile = File.createTempFile(request.getId(), FileData.extractFileExtension(curPart.filename));
+                curPart.fd = new FileData().setOriginName(curPart.filename).setInputStream(new FileInputStream(curPart.tmpFile)).setSize(curPart.tmpFile.length());
                 request.session.tmpFiles.add(curPart.tmpFile);
                 if (multiForm.containsKey(curPart.name)) { // 有多个值
                     Object v = multiForm.get(curPart.name);
@@ -242,77 +260,68 @@ public class HttpDecoder {
                     }
                 } else multiForm.put(curPart.name, curPart.fd);
             }
-            if (index == -1) {
+            if (index == -1) { // 没找到结束符. 证明buf 里面全是文件的内容
                 int length = buf.remaining();
                 try (OutputStream os = new FileOutputStream(curPart.tmpFile, true)) {
                     byte[] bs = new byte[length];
                     buf.get(bs); //先读到内存 减少io
                     os.write(bs);
                 }
-                curPart.fd.setSize(curPart.fd.getSize() + length);
+                // curPart.fd.setSize(curPart.fd.getSize() + length);
                 return false;
-            } else {
+            } else { //文件最后的内容
                 int length = index - buf.position();
                 if (length == 0 && curPart.filename.isEmpty()) {// 未上传的情况
-                    request.session.tmpFiles.remove(curPart.tmpFile);
-                    curPart.tmpFile.delete();
+                    request.session.tmpFiles.remove(curPart.tmpFile); curPart.tmpFile.delete();
                     Object v = multiForm.remove(curPart.name);
                     if (v instanceof List) ((List) v).remove(curPart.fd);
                     else {
                         multiForm.put(curPart.name, null);
                     }
-                } else {
+                } else { // 文件写入完成
                     try (OutputStream os = new FileOutputStream(curPart.tmpFile, true)) {
                         byte[] bs = new byte[length];
                         buf.get(bs); //先读到内存 减少io
                         os.write(bs);
                     }
-                    curPart.fd.setSize(curPart.fd.getSize() + length);
+                    curPart.fd.setSize(curPart.tmpFile.length());
                 }
                 curPart.valueComplete = true;
                 return true;
             }
-        } else { // 字符串 Part
+        } else { // 文本 Part
             curPart.value = readLine(buf).replace("\r", "");
-            if (curPart.value != null) {
-                curPart.valueComplete = true;
-                if (multiForm.containsKey(curPart.name)) { // 有多个值
-                    Object v = multiForm.get(curPart.name);
-                    if (v instanceof List) ((List) v).add(curPart.value);
-                    else {
-                        multiForm.put(curPart.name, new LinkedList<>(Arrays.asList(v, curPart.fd)));
-                    }
-                } else multiForm.put(curPart.name, curPart.value);
-                return true;
-            }
-            return false;
+            curPart.valueComplete = true;
+            if (multiForm.containsKey(curPart.name)) {
+                Object v = multiForm.get(curPart.name);
+                if (v instanceof List) ((List) v).add(curPart.value);  // 有多个值
+                else {
+                    multiForm.put(curPart.name, new LinkedList<>(Arrays.asList(v, curPart.fd)));
+                }
+            } else multiForm.put(curPart.name, curPart.value);
+            return true;
         }
     }
 
 
     /**
-     * 读行
-     *
+     * 读一行文本
      * @param buf
      * @return
      */
-    protected String readLine(ByteBuffer buf) {
+    protected String readLine(ByteBuffer buf) throws Exception {
+        byte[] lineDelimiter = "\n".getBytes(request.session.server.getCharset());
         int index = indexOf(buf, lineDelimiter);
         if (index == -1) return null;
         int readableLength = index - buf.position();
         byte[] bs = new byte[readableLength];
         buf.get(bs);
-        size += readableLength;
-        // 跳过 分割符的长度
-        for (int i = 0; i < lineDelimiter.length; i++) {
+        bodySize += readableLength;
+        for (int i = 0; i < lineDelimiter.length; i++) { // 跳过 分割符的长度
             buf.get();
         }
-        size += lineDelimiter.length;
-        try {
-            return new String(bs, request.session.server.getCharset());
-        } catch (UnsupportedEncodingException e) {
-            throw new RuntimeException(e);
-        }
+        bodySize += lineDelimiter.length;
+        return new String(bs, request.session.server.getCharset());
     }
 
 
@@ -340,7 +349,7 @@ public class HttpDecoder {
 
 
     /**
-     * http 请求 Part
+     * http 请求体 Part
      */
     protected class Part {
         String boundary;
@@ -351,18 +360,5 @@ public class HttpDecoder {
         boolean headerComplete;
         String value;
         boolean valueComplete;
-
-        public FileData getFd() {
-            if (fd != null) return fd;
-            if (tmpFile != null && tmpFile.exists()) {
-                // originName: curPart.filename, inputStream: , size: 0
-                try {
-                    fd = new FileData().setOriginName(filename).setInputStream(new FileInputStream(tmpFile)).setSize(tmpFile.length());
-                } catch (FileNotFoundException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-            return fd;
-        }
     }
 }

@@ -9,11 +9,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
+import static cn.xnatural.http.HttpServer.log;
+
 /**
  * mvc Handler 执行链路
  */
 public class Chain {
-    protected static final Logger              log       = LoggerFactory.getLogger(Chain.class);
     /**
      * 处理器链
      */
@@ -30,34 +31,38 @@ public class Chain {
 
     /**
      * 执行此Chain
-     * @param ctx
+     * @param hCtx
      */
-    protected void handle(HttpContext ctx) {
+    protected void handle(HttpContext hCtx) {
         boolean match = false;
         for (Handler h: handlers) { // 遍历查找匹配的Handler
             if (h instanceof FilterHandler) {
                 try {
-                    h.handle(ctx);
-                } catch (Throwable ex) {server.errHandle(ex, ctx);}
+                    hCtx.passedHandler.add(h);
+                    h.handle(hCtx);
+                } catch (Throwable ex) {server.errHandle(ex, hCtx);}
             } else if (h instanceof PathHandler) {
-                match = h.match(ctx);
-                log.trace((match ? "Matched" : "Unmatch") + " {}, {}", ((PathHandler) h).path(), ctx.request.getPath());
+                match = h.match(hCtx);
+                log.trace((match ? "Matched" : "Unmatch") + " {}, {}", ((PathHandler) h).path(), hCtx.request.getPath());
                 if (match) {
                     try {
-                        h.handle(ctx);
-                    } catch (Throwable ex) {server.errHandle(ex, ctx);}
+                        hCtx.passedHandler.add(h);
+                        h.handle(hCtx);
+                    } catch (Throwable ex) {server.errHandle(ex, hCtx);}
                     break;
                 }
-            } else new RuntimeException("Unknown Handler type: " + h.getClass().getName());
+            } else throw new RuntimeException("Unknown Handler type: " + h.getClass().getName());
             // 退出条件
-            if (ctx.response.commit.get()) break;
+            if (hCtx.response.commit.get()) break;
         }
-        if (ctx.response.commit.get()) return;
+        if (hCtx.response.commit.get()) return;
         if (!match) { // 未找到匹配
-            ctx.response.statusIfNotSet(404);
-            ctx.render();
-        } else if (ctx.response.status != null) { // 已经设置了status
-            ctx.render();
+            hCtx.response.statusIfNotSet(404);
+            log.warn("Request {}({}). id: {}, url: {}", HttpResponse.statusMsg.get(hCtx.response.status), hCtx.response.status, hCtx.request.getId(), hCtx.request.getRowUrl());
+            hCtx.render();
+        } else if (hCtx.response.status != null) { // 已经设置了status
+            log.warn("Request {}({}). id: {}, url: {}", HttpResponse.statusMsg.get(hCtx.response.status), hCtx.response.status, hCtx.request.getId(), hCtx.request.getRowUrl());
+            hCtx.render();
         }
     }
 
@@ -123,7 +128,7 @@ public class Chain {
                 boolean matched = super.match(hCtx);
                 if (!matched) return false;
                 if (method != null && !method.equalsIgnoreCase(hCtx.request.method)) {
-                    hCtx.response.status(405);
+                    hCtx.response.status(405); hCtx.pathToken.clear();
                     return false;
                 }
                 if (contentTypes != null && contentTypes.length > 0) {
@@ -134,11 +139,13 @@ public class Chain {
                         }
                     }
                     if (!f) {
-                        hCtx.response.status(415);
+                        hCtx.response.status(415); hCtx.pathToken.clear();
                         return false;
                     }
                 }
-                if (hCtx.response.status == null || 415 == hCtx.response.status || 405 == hCtx.response.status) hCtx.response.status(200);
+                if (hCtx.response.status != null && (415 == hCtx.response.status || 405 == hCtx.response.status)) {
+                    hCtx.response.status = null; // 重新找到匹配的Handler
+                }
                 return true;
             }
         });

@@ -10,6 +10,6 @@ public class Test {
                 hCtx.render("testPost");
             });
         })).start();
-        Thread.sleep(1000 * 60 * 1);
+        Thread.sleep(1000 * 60 * 100);
     }
 }

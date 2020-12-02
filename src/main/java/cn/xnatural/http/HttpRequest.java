@@ -36,7 +36,7 @@ public class HttpRequest {
 
     private LazySupplier<String> _id = new LazySupplier<>(() -> {
         String id = getHeader("X-Request-ID");
-        if (id != null || !id.isEmpty()) return id;
+        if (id != null && !id.isEmpty()) return id;
         return UUID.randomUUID().toString().replace("-", "");
     });
     /**
@@ -44,13 +44,6 @@ public class HttpRequest {
      * @return
      */
     public String getId() { return _id.get(); }
-
-
-    /**
-     * 请求头 Content-Type
-     * @return
-     */
-    public String getContentType() { return getHeader("content-type"); }
 
 
     private LazySupplier<Map<String, String>> _cookies = new LazySupplier<>(() -> {
@@ -192,6 +185,55 @@ public class HttpRequest {
 
 
     /**
+     * 请求头: Content-Type
+     * @return
+     */
+    public String getContentType() { return getHeader("content-type"); }
+
+
+    /**
+     * 请求头: Accept
+     * @return
+     */
+    public String getAccept() { return getHeader("Accept"); }
+
+
+    /**
+     * 请求头: Accept-Encoding
+     * @return
+     */
+    public String getAcceptEncoding() { return getHeader("Accept-Encoding"); }
+
+
+    /**
+     * 请求头: Connection
+     * @return
+     */
+    public String getConnection() { return getHeader("Connection"); }
+
+
+    /**
+     * 请求头: Host
+     * @return
+     */
+    public String getHost() { return getHeader("Host"); }
+
+
+    /**
+     * 请求头: User-Agent
+     * @return
+     */
+    public String getUserAgent() { return getHeader("User-Agent"); }
+
+
+    /**
+     * 请求头: Upgrade
+     * @return
+     */
+    public String getUpgrade() { return getHeader("Upgrade"); }
+
+
+    /**
      * 取Header值
      * @param hName header 名
      * @return
@@ -210,10 +252,33 @@ public class HttpRequest {
     }
 
 
-    // 请求属性集
+    /**
+     * http 协议: http, https
+     * @return
+     */
     public String getProtocol() { return protocol; }
+
+    /**
+     * 请求方法: get, post...
+     * @return
+     */
     public String getMethod() { return method; }
+
+    /**
+     * 原始url
+     * @return
+     */
     public String getRowUrl() { return rowUrl; }
+
+    /**
+     * http 版本
+     * @return
+     */
     public String getVersion() { return version; }
+
+    /**
+     * 请求body字符串
+     * @return
+     */
     public String getBodyStr() { return bodyStr; }
 }

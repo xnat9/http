@@ -17,6 +17,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static cn.xnatural.http.HttpServer.log;
+
 /**
  * http 请求 处理上下文
  */
@@ -32,19 +34,23 @@ public class HttpContext {
     /**
      * 路径块, 用于路径匹配
      */
-    protected final LinkedList<String>            pieces    = new LinkedList<>();
+    protected final LinkedList<String>  pieces        = new LinkedList<>();
     /**
      * 是否已关闭
      */
-    protected final AtomicBoolean                 closed    = new AtomicBoolean(false);
+    protected final AtomicBoolean       closed        = new AtomicBoolean(false);
     /**
      * 请求属性集
      */
-    protected final Map<String, Object>           attrs     = new ConcurrentHashMap<>();
+    protected final Map<String, Object> attrs         = new ConcurrentHashMap<>();
     /**
      * session 数据
      */
-    protected final Map<String, Object>           sessionData;
+    protected final Map<String, Object> sessionData;
+    /**
+     * 执行的 {@link Handler}
+     */
+    protected final List<Handler>       passedHandler = new LinkedList<>();
 
 
     /**
@@ -187,32 +193,38 @@ public class HttpContext {
         if (!f) throw new RuntimeException("Already submit response");
         long spend = System.currentTimeMillis() - request.createTime.getTime();
         if (spend > server.getInteger("warnTimeout", 5) * 1000) { // 请求超时警告
-            HttpServer.log.warn("Request timeout '" + request.getId() + "', path: " + request.getPath() + " , spend: " + spend + "ms");
+            log.warn("Request timeout '" + request.getId() + "', path: " + request.getPath() + " , spend: " + spend + "ms");
         }
         
         try {
-            if (body == null) {
-                response.statusIfNotSet(404);
+            if (body == null) { //无内容返回
+                response.statusIfNotSet(204);
                 response.contentLengthIfNotSet(0);
-                aioSession.send(ByteBuffer.wrap(preRespStr().getBytes(server._charset.get())));
+                aioSession.send(ByteBuffer.wrap(preRespStr().getBytes(server.getCharset())));
                 return;
+            } else {
+                response.statusIfNotSet(200);
+                // HttpResponseEncoder
+                if (body instanceof String) { //回写字符串
+                    response.contentTypeIfNotSet("text/plain;charset=" + server.getCharset());
+                    byte[] bodyBs = ((String) body).getBytes(server.getCharset());
+                    response.contentLengthIfNotSet(bodyBs.length);
+                    aioSession.send(ByteBuffer.wrap(preRespStr().getBytes(server.getCharset()))); //写header
+                    aioSession.send(ByteBuffer.wrap(bodyBs)); // 写body
+                } else if (body instanceof ApiResp) {
+                    response.contentTypeIfNotSet("application/json;charset=" + server.getCharset());
+                    ((ApiResp) body).setMark((String) param("mark"));
+                    ((ApiResp) body).setTraceNo(request.getId());
+                    body = JSON.toJSONString(body, SerializerFeature.WriteMapNullValue).getBytes(server.getCharset());
+                    aioSession.send(ByteBuffer.wrap(preRespStr().getBytes(server.getCharset())));
+                    aioSession.send(ByteBuffer.wrap((byte[]) body));
+                } else if (body instanceof File) {
+                    renderFile((File) body);
+                } else throw new Exception("Support response type: " + body.getClass().getName());
             }
-            response.statusIfNotSet(200);
-            if (body instanceof String) {
-                response.contentTypeIfNotSet("text/plain");
-                aioSession.send(ByteBuffer.wrap((preRespStr() + body).getBytes(server._charset.get())));
-            } else if (body instanceof ApiResp) {
-                ((ApiResp) body).setMark((String) param("mark"));
-                ((ApiResp) body).setTraceNo(request.getId());
-                body = JSON.toJSONString(body, SerializerFeature.WriteMapNullValue);
-                response.contentTypeIfNotSet("application/json");
-                aioSession.send(ByteBuffer.wrap((preRespStr() + body).getBytes(server._charset.get())));
-            } else if (body instanceof File) {
-                renderFile((File) body);
-            } else throw new Exception("Support response type: " + body.getClass().getName());
             determineClose();
         } catch (Exception ex) {
-            HttpServer.log.error("Http response error", ex);
+            log.error("Http response error", ex);
             close();
         }
     }
@@ -227,8 +239,9 @@ public class HttpContext {
     protected void renderFile(File file) throws Exception {
         if (!file.exists()) {
             response.status(404);
+            log.warn("Request {}({}). id: {}, url: {}", HttpResponse.statusMsg.get(response.status), response.status, request.getId(), request.getRowUrl());
             response.contentLengthIfNotSet(0);
-            aioSession.send(ByteBuffer.wrap(preRespStr().getBytes("utf-8")));
+            aioSession.send(ByteBuffer.wrap(preRespStr().getBytes(server.getCharset())));
             return;
         }
         if (file.getName().endsWith(".html")) {
@@ -238,13 +251,13 @@ public class HttpContext {
         } else if (file.getName().endsWith(".js")) {
             response.contentTypeIfNotSet("application/javascript");
         }
-        byte[] bs = preRespStr().getBytes("utf-8");
+        byte[] preBs = preRespStr().getBytes(server.getCharset());
 
         int chunkedSize = chunkedSize((int) file.length(), File.class);
-        if (chunkedSize < 0) {
+        if (chunkedSize < 0) { // 文件整块传送
             response.contentLengthIfNotSet((int) file.length());
-            ByteBuffer buf = ByteBuffer.allocate((int) file.length() + bs.length);
-            buf.put(bs);
+            ByteBuffer buf = ByteBuffer.allocate((int) file.length() + preBs.length);
+            buf.put(preBs);
             try (InputStream is = new FileInputStream(file)) {
                 do {
                     int b = is.read();
@@ -254,7 +267,7 @@ public class HttpContext {
             }
             buf.flip();
             aioSession.send(buf);
-        } else {
+        } else { //文件分块传送
             response.header("Transfer-Encoding", "chunked");
             try (InputStream is = new FileInputStream(file)) {
                 ByteBuffer buf = ByteBuffer.allocate(chunkedSize);
@@ -266,8 +279,8 @@ public class HttpContext {
                     // buf 填满 或者 结束
                     if (!buf.hasRemaining() || end) {
                         buf.flip();
-                        byte[] headerBs = (Integer.toHexString(buf.limit()) + "\r\n").getBytes("utf-8");
-                        byte[] endBs = "\r\n".getBytes("utf-8");
+                        byte[] headerBs = (Integer.toHexString(buf.limit()) + "\r\n").getBytes(server.getCharset());
+                        byte[] endBs = "\r\n".getBytes(server.getCharset());
                         ByteBuffer bb = ByteBuffer.allocate(headerBs.length + buf.limit() + endBs.length);
                         bb.put(headerBs); bb.put(buf); bb.put(endBs);
                         bb.flip();
@@ -276,7 +289,7 @@ public class HttpContext {
                     }
                 } while (!end);
                 // 结束chunk
-                aioSession.send(ByteBuffer.wrap("0\r\n\r\n".getBytes("utf-8")));
+                aioSession.send(ByteBuffer.wrap("0\r\n\r\n".getBytes(server.getCharset())));
             }
         }
     }
@@ -296,10 +309,13 @@ public class HttpContext {
                 chunkedSize = 1024 * 1024 * 4;
             } else if (size > 1024 * 1024) { // 大于1M
                 chunkedSize = 1024 * 1024;
-            } else { // 小于1M, 不需要分段传送
+            } else if (size > 1024 * 500) { // 大于500K
+                chunkedSize = 1024 * 200;
+            } else { // 小于500K, 不需要分段传送.  限于带宽(带宽必须大于分块的最小值, 否则会导致前端接收数据不全)
                 chunkedSize = -1;
             }
         }
+        // TODO 其它类型暂时不分块
         return chunkedSize;
     }
     
@@ -310,7 +326,7 @@ public class HttpContext {
      */
     protected String preRespStr() {
         StringBuilder sb = new StringBuilder();
-        sb.append("HTTP/ ").append(request.getVersion()).append(response.status).append(" ").append(HttpResponse.statusMsg.get(response.status)).append("\r\n"); // 起始行
+        sb.append("HTTP/").append(request.getVersion()).append(" ").append(response.status).append(" ").append(HttpResponse.statusMsg.get(response.status)).append("\r\n"); // 起始行
         response.headers.forEach((key, value) -> sb.append(key).append(": ").append(value).append("\r\n"));
         response.cookies.forEach((key, value) -> sb.append("Set-Cookie: ").append(key).append('=').append(value).append("\r\n"));
         return sb.append("\r\n").toString();
@@ -321,7 +337,7 @@ public class HttpContext {
      * 判断是否应该关闭此次Http连接会话
      */
     protected void determineClose() {
-        String connection = request.getHeader("connection");
+        String connection = request.getConnection();
         if (connection != null && connection.toUpperCase().contains("close")) {
             // http/1.1 规定 只有显示 connection:close 才关闭连接
             close();

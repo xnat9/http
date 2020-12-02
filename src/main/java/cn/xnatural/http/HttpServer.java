@@ -27,7 +27,7 @@ import java.util.function.Supplier;
  * http 服务
  */
 public class HttpServer {
-    static final Logger log = LoggerFactory.getLogger(HttpServer.class);
+    protected static final Logger log = LoggerFactory.getLogger(HttpServer.class);
     /**
      * jdk aio 基类 {@link AsynchronousServerSocketChannel}
      */
@@ -78,7 +78,7 @@ public class HttpServer {
     protected final LazySupplier<Set<String>> _ignoreLogSuffix   = new LazySupplier<>(() -> {
         final Set<String> set = new HashSet<>(Arrays.asList(".js", ".css", ".html", ".vue", ".png", ".ttf", ".woff", ".woff2", "favicon.ico", ".map"));
         for (String suffix : getStr("ignoreLogUrlSuffix", "").split(",")) {
-            set.add(suffix);
+            if (suffix != null && !suffix.trim().isEmpty()) set.add(suffix.trim());
         }
         return set;
     });
