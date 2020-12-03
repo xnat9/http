@@ -93,4 +93,9 @@ public class WebSocket {
         buf.flip();
         return buf;
     }
+
+
+    public HttpAioSession getSession() {
+        return session;
+    }
 }

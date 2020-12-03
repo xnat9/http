@@ -1,6 +1,7 @@
 import cn.xnatural.http.HttpServer;
+import ctrl.TestCtrl;
 
-public class Test {
+public class TestHttp {
 
     public static void main(String[] args) throws Exception {
         HttpServer server = new HttpServer().buildChain((chain -> {
@@ -9,7 +10,7 @@ public class Test {
             }).post("testPost", hCtx -> {
                 hCtx.render("testPost");
             });
-        })).start();
+        })).ctrls(TestCtrl.class).start();
         Thread.sleep(1000 * 60 * 100);
     }
 }

@@ -20,7 +20,7 @@ abstract class PathHandler implements Handler {
     private LazySupplier<String[]> _pieces = new LazySupplier<>(() -> {
         String p = path();
         if (p == null) throw new IllegalArgumentException("PathHandler path must not be null");
-        if (p == "/") return new String[]{"/"};
+        if ("/".equals(p)) return new String[]{"/"};
         return Handler.extract(p).split("/");
     });
     protected String[] pieces() {

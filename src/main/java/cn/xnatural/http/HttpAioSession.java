@@ -132,6 +132,34 @@ public class HttpAioSession {
     }
 
 
+    /**
+     * 远程连接地址
+     * @return
+     */
+    public String getRemoteAddress() {
+        try {
+            return channel.getRemoteAddress().toString();
+        } catch (IOException e) {
+            log.error("",e);
+        }
+        return null;
+    }
+
+
+    /**
+     * 本地连接地址
+     * @return
+     */
+    public String getLocalAddress() {
+        try {
+            return channel.getLocalAddress().toString();
+        } catch (IOException e) {
+            log.error("",e);
+        }
+        return null;
+    }
+
+
     @Override
     public String toString() {
         return HttpAioSession.class.getSimpleName() + "@" + Integer.toHexString(hashCode()) + "[" + channel.toString() + "]";

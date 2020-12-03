@@ -218,6 +218,11 @@ public class HttpContext {
                     body = JSON.toJSONString(body, SerializerFeature.WriteMapNullValue).getBytes(server.getCharset());
                     aioSession.send(ByteBuffer.wrap(preRespStr().getBytes(server.getCharset())));
                     aioSession.send(ByteBuffer.wrap((byte[]) body));
+                } else if (body instanceof byte[]) {
+                    byte[] bodyBs = (byte[]) body;
+                    response.contentLengthIfNotSet(bodyBs.length);
+                    aioSession.send(ByteBuffer.wrap(preRespStr().getBytes(server.getCharset()))); //写header
+                    aioSession.send(ByteBuffer.wrap(bodyBs)); // 写body
                 } else if (body instanceof File) {
                     renderFile((File) body);
                 } else throw new Exception("Support response type: " + body.getClass().getName());
@@ -251,24 +256,17 @@ public class HttpContext {
         } else if (file.getName().endsWith(".js")) {
             response.contentTypeIfNotSet("application/javascript");
         }
-        byte[] preBs = preRespStr().getBytes(server.getCharset());
 
         int chunkedSize = chunkedSize((int) file.length(), File.class);
         if (chunkedSize < 0) { // 文件整块传送
             response.contentLengthIfNotSet((int) file.length());
-            ByteBuffer buf = ByteBuffer.allocate((int) file.length() + preBs.length);
-            buf.put(preBs);
-            try (InputStream is = new FileInputStream(file)) {
-                do {
-                    int b = is.read();
-                    if (-1 == b) break;
-                    else buf.put((byte) b);
-                } while (true);
-            }
-            buf.flip();
-            aioSession.send(buf);
+            byte[] content = new byte[(int) file.length()]; // 一次性读出来, 减少IO
+            try (InputStream is = new FileInputStream(file)) { is.read(content); }
+            aioSession.send(ByteBuffer.wrap(preRespStr().getBytes(server.getCharset()))); // 先写header
+            aioSession.send(ByteBuffer.wrap(content)); // 再写body
         } else { //文件分块传送
             response.header("Transfer-Encoding", "chunked");
+            aioSession.send(ByteBuffer.wrap(preRespStr().getBytes(server.getCharset()))); // 先写header
             try (InputStream is = new FileInputStream(file)) {
                 ByteBuffer buf = ByteBuffer.allocate(chunkedSize);
                 boolean end = false;
@@ -282,8 +280,7 @@ public class HttpContext {
                         byte[] headerBs = (Integer.toHexString(buf.limit()) + "\r\n").getBytes(server.getCharset());
                         byte[] endBs = "\r\n".getBytes(server.getCharset());
                         ByteBuffer bb = ByteBuffer.allocate(headerBs.length + buf.limit() + endBs.length);
-                        bb.put(headerBs); bb.put(buf); bb.put(endBs);
-                        bb.flip();
+                        bb.put(headerBs); bb.put(buf); bb.put(endBs); bb.flip();
                         aioSession.send(bb);
                         buf.clear();
                     }
@@ -427,7 +424,7 @@ public class HttpContext {
                 throw new RuntimeException(e);
             }
         }
-        else if (type.isEnum()) return Arrays.stream(type.getEnumConstants()).filter((o) -> ((Enum) o).name() == v).findFirst().orElse(null);
+        else if (type.isEnum()) return Arrays.stream(type.getEnumConstants()).filter((o) -> v.equals(((Enum) o).name())).findFirst().orElse(null);
         return (T) v;
     }
 }

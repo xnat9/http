@@ -35,6 +35,7 @@ public class FileData {
         return this;
     }
 
+
     /**
      *  返回文件名的扩展名
      * @param fileName

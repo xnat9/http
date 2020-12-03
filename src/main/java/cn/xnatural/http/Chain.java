@@ -87,7 +87,7 @@ public class Chain {
                     it.add(handler); added = true; break;
                 } else { // 小于
                     if (i == 0 && it.hasNext() && ((h = it.next()) != null)) { // 和handler同类型的只有一个时, 插在后边
-                        if (h.getType() != handler.getType()) {
+                        if (!h.getType().equals(handler.getType())) {
                             it.previous();
                             it.add(handler); added = true; break;
                         } else it.previous();
@@ -127,7 +127,7 @@ public class Chain {
             public boolean match(HttpContext hCtx) {
                 boolean matched = super.match(hCtx);
                 if (!matched) return false;
-                if (method != null && !method.equalsIgnoreCase(hCtx.request.method)) {
+                if (method != null && !method.isEmpty() && !method.equalsIgnoreCase(hCtx.request.method)) {
                     hCtx.response.status(405); hCtx.pathToken.clear();
                     return false;
                 }
@@ -231,7 +231,7 @@ public class Chain {
                 public boolean match(HttpContext hCtx) {
                     boolean f = false;
                     for (int i = 0; i < pieces().length; i++) {
-                        f = (pieces()[i] == hCtx.pieces.get(i));
+                        f = (pieces()[i].equals(hCtx.pieces.get(i)));
                         if (!f) break;
                     }
                     if (f) {
