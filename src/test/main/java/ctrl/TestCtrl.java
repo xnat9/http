@@ -5,18 +5,20 @@ import cn.xnatural.http.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static cn.xnatural.http.ApiResp.fail;
 import static cn.xnatural.http.ApiResp.ok;
+import static javax.management.Query.attr;
 
-@Ctrl
+/**
+ * 常用接口例子
+ */
+@Ctrl(prefix = "test")
 public class TestCtrl {
     protected static final Logger log = LoggerFactory.getLogger(TestCtrl.class);
 
@@ -24,13 +26,13 @@ public class TestCtrl {
 
 
     @Filter(order = 1)
-    void filter2(HttpContext ctx) {
-        log.info("test filter2 ============");
+    void filter1(HttpContext ctx) {
+        log.info("filter1 ============");
     }
 
     @Filter(order = 2)
-    void filter1(HttpContext ctx) {
-        log.info("filter1 ============");
+    void filter2(HttpContext ctx) {
+        log.info("filter2 ============");
     }
 
     @EL(name = "testWsMsg")
@@ -89,14 +91,6 @@ public class TestCtrl {
     }
 
 
-    // 文件上传
-    @Path(path = "upload")
-    ApiResp upload(FileData file, String version) {
-        if (file == null) return ApiResp.fail("文件未上传");
-        return ok().attr("file", file.toString()).attr("version", version);
-    }
-
-
     // 异步响应(手动ctx.render)
     @Path(path = "async")
     void async(String p1, HttpContext ctx) {
@@ -133,16 +127,72 @@ public class TestCtrl {
     }
 
 
+    // 文件上传
+    @Path(path = "upload")
+    ApiResp upload(FileData file, String version) throws Exception {
+        if (file == null) return ApiResp.fail("文件未上传");
+        file.transferTo(new File(System.getProperty("java.io.tmpdir")));
+        log.info("upload file: " + file);
+        return ok().attr("file", file.toString()).attr("version", version);
+    }
+
+
     // 下载文件
-    @Path(path = "download")
-    void download(HttpContext ctx) {
-        File f = new File("d:/tmp/tmp.xlsx");
-        ctx.response.contentType("application/vnd.ms-excel;charset=utf-8");
-        ctx.response.header("Content-Disposition", "attachment;filename=" + f.getName());
-//        ctx.response.header("Content-Disposition", "attachment;filename=" + new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()) + ".xlsx");
+    @Path(path = "download/:fName")
+    File download(String fName, HttpContext ctx) {
+        File f = new File(new File(System.getProperty("java.io.tmpdir")), (fName == null ? "tmp.xlsx" : fName));
+        ctx.response.contentDisposition("attachment;filename=" + f.getName());
 //        Object wb = org.apache.poi.ss.usermodel.WorkbookFactory.create(true);
 //        Object bos = new ByteArrayOutputStream(); wb.write(bos);
-        ctx.render(f);
+        return f;
+    }
+
+
+    /**
+     * 文件上传: 断点续传/持续上传/分片上传
+     * 原理: 把文件分成多块 依次上传, 用同一个标识多次上传为同一个文件
+     * @param server {@link HttpServer}
+     * @param filePiece 文件片
+     * @param fileId 文件id
+     * @param originName 文件原名
+     * @param totalPiece 总片数
+     * @param currentPiece 当前第几片
+     * @return
+     */
+    protected final Map<String, File> tmpFiles = new ConcurrentHashMap<>();
+    @Path(path = "pieceUpload")
+    ApiResp pieceUpload(HttpServer server, FileData filePiece, String fileId, String originName, Integer totalPiece, Integer currentPiece) throws Exception {
+        if (filePiece == null) {return ApiResp.fail("文件片未上传");}
+        if (fileId == null || fileId.isEmpty()) {return ApiResp.fail("参数错误: fileId 不能为空");}
+        if (totalPiece == null) {return ApiResp.fail("参数错误: totalPiece 不能为空");}
+        if (totalPiece < 2) {return ApiResp.fail("参数错误: totalPiece >= 2");}
+        if (currentPiece == null) {return ApiResp.fail("参数错误: currentPiece 不能为空");}
+        if ((originName == null || originName.isEmpty()) && currentPiece == 1) {return ApiResp.fail("参数错误: originName 不能为空");}
+        if (currentPiece < 1) {return ApiResp.fail("参数错误: currentPiece >= 1");}
+        if (totalPiece < currentPiece) {return ApiResp.fail("参数错误: totalPiece >= currentPiece");}
+
+        ApiResp<Map<String, Object>> resp = ok().attr("fileId", fileId).attr("currentPiece", currentPiece);
+        if (currentPiece == 1) { // 第一个分片: 保存文件
+            tmpFiles.put(fileId, filePiece.getFile());
+            // TODO 过一段时间还没上传完 则主动删除 server.getInteger("pieceUpload.maxKeep", 120)
+        } else if (totalPiece > currentPiece) { // 后面的分片: 追加到第一个分片的文件里面去
+            File file = tmpFiles.get(fileId);
+            if (file == null) return ApiResp.of("404", "文件未找到: " + fileId).attr("originName", originName);
+            filePiece.appendTo(file); filePiece.delete();
+
+            long maxSize = server.getLong("pieceUpload.maxFileSize", 1024 * 1024 * 200L); // 最大上传200M
+            if (file.length() > maxSize) { // 文件大小验证
+                file = tmpFiles.remove(fileId);
+                file.delete();
+                return ApiResp.fail("上传文件太大, <=" + maxSize);
+            }
+        } else { // 最后一个分片
+            File file = tmpFiles.remove(fileId);
+            FileData fd = new FileData().setFile(file).setInputStream(new FileInputStream(file)).setOriginName(originName);
+            // TODO 传 fd 给 service 层
+            return resp.attr("complete", true);
+        }
+        return resp.attr("complete", false);
     }
 
 

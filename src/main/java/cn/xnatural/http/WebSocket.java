@@ -22,7 +22,7 @@ public class WebSocket {
      * @param msg
      */
     public void send(String msg) {
-        session.send(encode(msg));
+        session.write(encode(msg));
     }
 
 

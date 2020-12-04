@@ -297,6 +297,7 @@ public class HttpServer {
                     log.error("@WS parameter must be WebSocket. {}#{}", ctrl.getClass().getName(), method.getName());
                     return;
                 }
+                method.setAccessible(true);
                 log.info("WebSocket: /" + (((aCtrl.prefix() != null && !aCtrl.prefix().isEmpty()) ? aCtrl.prefix() + "/" : "") + aWS.path()));
                 chain.ws(aWS.path(), hCtx -> {
                     try {
@@ -314,7 +315,7 @@ public class HttpServer {
                         hCtx.response.header("Sec-WebSocket-Location", "ws://" + getHp() + "/" + aCtrl.prefix() + "/" + aWS.path());
                         hCtx.render(null);
 
-                        method.invoke(ctrl, hCtx.aioSession.ws);
+                        method.invoke(ctrl, hCtx.aioStream.ws);
                     } catch (InvocationTargetException ex) {
                         log.error("", ex.getCause());
                         hCtx.close();
@@ -383,8 +384,7 @@ public class HttpServer {
                     protected void doClose(HttpAioSession session) { connections.remove(session); }
                 };
                 connections.offer(se);
-                InetSocketAddress rAddr = ((InetSocketAddress) channel.getLocalAddress());
-                log.debug("New HTTP(AIO) Connection from: " + rAddr.getHostString() + ":" + rAddr.getPort() + ", connected: " + connections.size());
+                log.debug("New HTTP(AIO) Connection from: " + se.getRemoteAddress() + ", connected: " + connections.size());
                 se.start();
                 if (connections.size() > 10) clean();
             } catch (IOException e) {

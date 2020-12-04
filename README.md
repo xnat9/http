@@ -1,7 +1,7 @@
 # http
 
 #### 介绍
-轻量级 http 服务 基于 https://gitee.com/xnat/aio
+轻量级 http 服务 基于 jdk aio
 
 #### 软件架构
 软件架构说明

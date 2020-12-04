@@ -72,7 +72,7 @@ public class HttpAioSession {
      * 发送消息到客户端
      * @param buf
      */
-    public void send(ByteBuffer buf) {
+    public void write(ByteBuffer buf) {
         if (closed.get() || buf == null) return;
         lastUsed = System.currentTimeMillis();
         try {
@@ -80,7 +80,7 @@ public class HttpAioSession {
         } catch (Exception ex) {
             if (!(ex instanceof ClosedChannelException)) {
                 try {
-                    log.error(ex.getClass().getName() + " " + channel.getLocalAddress().toString() + " ->" + channel.getRemoteAddress().toString(), ex);
+                    log.error(ex.getClass().getName() + " " + channel.getRemoteAddress().toString() + " ->" + channel.getLocalAddress().toString(), ex);
                 } catch (IOException e) {
                     log.error("", e);
                 }

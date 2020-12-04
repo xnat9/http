@@ -1,6 +1,9 @@
 package cn.xnatural.http;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.*;
 
@@ -59,7 +62,7 @@ public class HttpDecoder {
         if (request == null) return null;
         String ct = request.getContentType();
         if (ct == null) return null;
-        if (ct.toUpperCase().contains("multipart/form-data")) {
+        if (ct.toLowerCase().contains("multipart/form-data")) {
             return ct.split(";")[1].split("=")[1];
         }
         return null;
@@ -151,6 +154,8 @@ public class HttpDecoder {
         String ct = request.getContentType();
 
         if (ct == null || ct.isEmpty()) return true; // get 请求 有可能没得 body
+        ct = ct.toLowerCase();
+        int position = buf.position();
         if (ct.contains("application/json") || ct.contains("application/x-www-form-urlencoded") || ct.contains("text/plain")) {
             String lengthStr = request.getHeader("content-length");
             if (lengthStr != null) {
@@ -160,10 +165,13 @@ public class HttpDecoder {
                 buf.get(bs);
                 request.bodyStr = new String(bs, request.session.server.getCharset());
             }
+            bodySize += buf.position() - position;
             return true;
         } else if (ct.contains("multipart/form-data")) {
             if (multiForm == null) multiForm = new HashMap<>();
-            return readMultipart(buf);
+            boolean f = readMultipart(buf);
+            bodySize += buf.position() - position;
+            return f;
         }
         return false;
     }
@@ -186,24 +194,21 @@ public class HttpDecoder {
                 if (line.equals(endLine) || line.equals(endLine + "\r")) return true; // 结束行
                 curPart = new Part(); curPart.boundary = line;
 
-                // 读Part的header
+                //1. 读Part的header
                 boolean f = readMultipartHeader(buf);
                 if (!f) return false; //数据不够
-                // 读part的值
+                //2. 读part的值
                 f = readMultipartValue(buf);
-                if (f) {
-                    bodySize += curPart.fd == null ? 0 : curPart.fd.getSize();
-                    curPart = null; // 下一个 Part
-                } else return false;
+                if (f) curPart = null; // 继续读下一个 Part
+                else return false;
             } while (true);
         } else if (!curPart.headerComplete) {
             boolean f = readMultipartHeader(buf);
-            if (f) readMultipart(buf);
+            if (f) return readMultipart(buf);
         } else if (!curPart.valueComplete) {
             boolean f = readMultipartValue(buf);
             if (f) {
-                bodySize += curPart.fd == null ? 0 : curPart.fd.getSize();
-                curPart = null; // 下一个 Part
+                curPart = null; // 继续读下一个 Part
                 f = readMultipart(buf);
                 if (f) return true;
             }
@@ -222,10 +227,8 @@ public class HttpDecoder {
         do { // 每个part的header
             String line = readLine(buf);
             if (null == line) return false;
-            else if ("\r".equals(line)) {
-                curPart.headerComplete = true;
-                return true;
-            } else if (line.toUpperCase().contains("content-disposition")) { // part为文件
+            else if ("\r".equals(line)) { curPart.headerComplete = true; return true; }
+            else if (line.toLowerCase().contains("content-disposition")) { // part为文件
                 for (String entry : line.split(":")[1].split(";")) {
                     String[] arr = entry.split("=");
                     if (arr.length > 1) {
@@ -235,7 +238,8 @@ public class HttpDecoder {
                         }
                     }
                 }
-            } else throw new Exception("Unknown part: " + line);
+            }
+            // else throw new Exception("Unknown part: " + line);
         } while (true);
     }
 
@@ -247,10 +251,10 @@ public class HttpDecoder {
      */
     protected boolean readMultipartValue(ByteBuffer buf) throws Exception {
         if (curPart.filename != null) { // 文件 Part, filename  可能是个空字符串
-            int index = indexOf(buf, ("\r\n--" + boundary).getBytes(request.session.server.getCharset()));
+            int index = indexOf(buf, ("\r\n--" + boundary.get()).getBytes(request.session.server.getCharset()));
             if (curPart.tmpFile == null) { // 临时存放文件
                 curPart.tmpFile = File.createTempFile(request.getId(), FileData.extractFileExtension(curPart.filename));
-                curPart.fd = new FileData().setOriginName(curPart.filename).setInputStream(new FileInputStream(curPart.tmpFile)).setSize(curPart.tmpFile.length());
+                curPart.fd = new FileData().setOriginName(curPart.filename).setFile(curPart.tmpFile).setInputStream(new FileInputStream(curPart.tmpFile)).setSize(curPart.tmpFile.length());
                 request.session.tmpFiles.add(curPart.tmpFile);
                 if (multiForm.containsKey(curPart.name)) { // 有多个值
                     Object v = multiForm.get(curPart.name);
@@ -290,7 +294,9 @@ public class HttpDecoder {
                 return true;
             }
         } else { // 文本 Part
-            curPart.value = readLine(buf).replace("\r", "");
+            String line = readLine(buf);
+            if (line == null) return false;
+            curPart.value = line.replace("\r", "");
             curPart.valueComplete = true;
             if (multiForm.containsKey(curPart.name)) {
                 Object v = multiForm.get(curPart.name);

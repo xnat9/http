@@ -122,6 +122,12 @@ public class HttpResponse {
     public HttpResponse contentType(CharSequence contentType) { return header("content-type", contentType); }
 
 
+    public HttpResponse contentDisposition(CharSequence contentDisposition) { return header("Content-Disposition", contentDisposition); }
+
+
+    public HttpResponse transferEncoding(CharSequence transferEncoding) { return header("Transfer-Encoding", transferEncoding); }
+
+
     public HttpResponse contentTypeIfNotSet(CharSequence contentType) {
         if (!headers.containsKey(CONTENT_TYPE)) {
             header(CONTENT_TYPE, contentType);
