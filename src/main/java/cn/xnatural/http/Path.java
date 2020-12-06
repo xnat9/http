@@ -20,8 +20,14 @@ public @interface Path {
      */
     String method() default "";
     /**
-     * application/json, multipart/form-data, application/x-www-form-urlencoded,text/plain
+     * 指定 request 接收那些 Content-Type
+     * application/json, multipart/form-data, application/x-www-form-urlencoded, text/plain
      * @return
      */
     String[] consumer() default {};
+    /**
+     * 指定 response的 Content-Type
+     * @return
+     */
+    String produce() default "";
 }

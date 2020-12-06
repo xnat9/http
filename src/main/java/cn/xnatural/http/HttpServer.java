@@ -1,6 +1,5 @@
 package cn.xnatural.http;
 
-import cn.xnatural.enet.event.EL;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,10 +47,6 @@ public class HttpServer {
      * 请求/响应 io 字节编码
      */
     protected final LazySupplier<String>                                     _charset           = new LazySupplier<>(() -> getStr("charset", "utf-8"));
-    /**
-     * session cookie name
-     */
-    protected final LazySupplier<String>                                     _sessionCookieName = new LazySupplier<>(() -> getStr("sessionCookieName", "sId"));
     /**
      * mvc: m层执行链
      */
@@ -126,7 +121,6 @@ public class HttpServer {
     /**
      * 服务启动
      */
-    @EL(name = "sys.starting", async = true)
     public HttpServer start() {
         if (ssc != null) throw new RuntimeException("HttpServer is already running");
         try {
@@ -153,7 +147,6 @@ public class HttpServer {
     /**
      * 服务停止
      */
-    @EL(name = "sys.stopping", async = true)
     public void stop() {
         enabled = false;
         try { Thread.sleep(1000L); ssc.close(); } catch (Exception e) {/** ignore **/}
@@ -173,7 +166,7 @@ public class HttpServer {
                 log.info("Start Request '{}': {}. from: " + request.session.channel.getRemoteAddress().toString(), request.getId(), request.rowUrl);
             }
             counter.increment();
-            hCtx = new HttpContext(request, this, sessionDelegate());
+            hCtx = new HttpContext(request, this, this::sessionDelegate);
             if (enabled) {
                 if (connections.size() > getInteger("maxConnection", 128)) { // 限流
                     hCtx.response.status(503);
@@ -196,8 +189,9 @@ public class HttpServer {
     /**
      * session 数据 委托对象
      * @return
+     * @param hCtx
      */
-    protected Map<String, Object> sessionDelegate() { return null; }
+    protected Map<String, Object> sessionDelegate(HttpContext hCtx) { return null; }
 
 
     /**
@@ -257,7 +251,7 @@ public class HttpServer {
                         return;
                     }
                     log.info("Request mapping: /" + (((aCtrl.prefix() != null && !aCtrl.prefix().isEmpty()) ? aCtrl.prefix() + "/" : "") + ("/".equals(path) ? "" : path)));
-                    chain.method(aPath.method(), path, aPath.consumer(), hCtx -> { // 实际@Path 方法 调用
+                    chain.method(aPath.method(), path, aPath.consumer(), aPath.produce(), hCtx -> { // 实际@Path 方法 调用
                         try {
                             Object result = method.invoke(ctrl, Arrays.stream(ps).map((p) -> hCtx.param(p.getName(), p.getType())).toArray());
                             if (!void.class.isAssignableFrom(method.getReturnType())) {
@@ -403,8 +397,7 @@ public class HttpServer {
     /**
      * 清除已关闭或已过期的连接
      */
-    @EL(name = "sys.heartbeat", async = true)
-    protected void clean() {
+    public void clean() {
         if (connections.isEmpty()) return;
         int size = connections.size();
         long httpExpire = Duration.ofSeconds(getInteger("connection.maxIdle",
@@ -524,7 +517,7 @@ public class HttpServer {
      * 返回 host:port
      * @return
      */
-    @EL(name = {"http.hp", "web.hp"}, async = false)
+    // @EL(name = {"http.hp", "web.hp"}, async = false)
     public String getHp() {
         String ip = _hpCfg.get().split(":")[0];
         if ("localhost".equals(ip)) {ip = ipv4();}

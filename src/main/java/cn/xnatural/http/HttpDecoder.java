@@ -69,9 +69,7 @@ public class HttpDecoder {
     });
 
 
-    HttpDecoder(HttpRequest request) {
-        this.request = request;
-    }
+    HttpDecoder(HttpRequest request) { this.request = request; }
 
 
     /**
@@ -105,7 +103,6 @@ public class HttpDecoder {
 
     /**
      * 解析: 请求起始行
-     *
      * @param buf
      */
     protected boolean startLine(ByteBuffer buf) throws Exception {

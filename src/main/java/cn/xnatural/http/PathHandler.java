@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
  */
 abstract class PathHandler implements Handler {
 
+
     /**
      * 请求匹配的路径
      * @return
@@ -23,9 +24,7 @@ abstract class PathHandler implements Handler {
         if ("/".equals(p)) return new String[]{"/"};
         return Handler.extract(p).split("/");
     });
-    protected String[] pieces() {
-        return _pieces.get();
-    }
+    protected String[] pieces() { return _pieces.get(); }
 
 
     // 匹配的先后顺序, 越大越先匹配

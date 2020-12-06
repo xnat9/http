@@ -6,6 +6,7 @@ import com.alibaba.fastjson.serializer.SerializerFeature;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.io.Serializable;
 import java.lang.reflect.Array;
 import java.math.BigDecimal;
 import java.net.MalformedURLException;
@@ -16,6 +17,7 @@ import java.security.AccessControlException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 import static cn.xnatural.http.HttpServer.log;
 
@@ -32,7 +34,7 @@ public class HttpContext {
      */
     protected final           Map<String, Object> pathToken = new HashMap<>(7);
     /**
-     * 路径块, 用于路径匹配
+     * 路径块, 用于路径匹配 /test/p1/p2 -> test,p1,p2
      */
     protected final LinkedList<String>            pieces        = new LinkedList<>();
     /**
@@ -44,9 +46,9 @@ public class HttpContext {
      */
     protected final Map<String, Object>           attrs         = new ConcurrentHashMap<>();
     /**
-     * session 数据
+     * session 数据操作委托
      */
-    protected final Map<String, Object>           sessionData;
+    protected final LazySupplier<Map<String, Object>> sessionSupplier;
     /**
      * 执行的 {@link Handler}
      */
@@ -59,12 +61,12 @@ public class HttpContext {
      * @param server {@link HttpServer}
      * @param sessionDelegate session 委托映射
      */
-    HttpContext(HttpRequest request, HttpServer server, Map<String, Object> sessionDelegate) {
+    HttpContext(HttpRequest request, HttpServer server, Function<HttpContext, Map<String, Object>> sessionDelegate) {
         if (request == null) throw new NullPointerException("request must not be null");
         this.request = request;
         this.aioStream = request.session;
         this.server = server;
-        this.sessionData = sessionDelegate;
+        this.sessionSupplier = new LazySupplier<>(() -> sessionDelegate.apply(this));
 
         if ("/".equals(request.getPath())) this.pieces.add("/");
         else {
@@ -90,7 +92,7 @@ public class HttpContext {
      * session id(会话id)
      * @return
      */
-    public String getSessionId() { return (String) sessionData.get("id"); }
+    public String getSessionId() { return (String) sessionSupplier.get().get("id"); }
 
 
     /**
@@ -122,24 +124,32 @@ public class HttpContext {
      * @return
      */
     public HttpContext setSessionAttr(String aName, Object value) {
-        if (sessionData == null) return this;
-        if (value == null) sessionData.remove(aName);
-        else sessionData.put(aName, value);
+        if (sessionSupplier.get() == null) return this;
+        if (value == null) sessionSupplier.get().remove(aName);
+        else sessionSupplier.get().put(aName, value);
         return this;
     }
 
 
     /**
-     * 获取 session 属性
-     * @param key
-     * @param type
-     * @return
+     * 删除 session 属性
+     * @param aName 属性名
+     * @return 属性值
      */
-    public <T> T getSessionAttr(String key, Class<T> type) {
-        if (sessionData == null) return null;
-        Object v = sessionData.get(key);
-        if (type != null) return type.cast(v);
-        return (T) v;
+    public Object removeSessionAttr(String aName) {
+        if (sessionSupplier.get() == null) return null;
+        return sessionSupplier.get().remove(aName);
+    }
+
+
+    /**
+     * 获取 session 属性
+     * @param aName 属性名
+     * @return 属性值
+     */
+    public Object getSessionAttr(String aName) {
+        if (sessionSupplier.get() == null) return null;
+        return sessionSupplier.get().get(aName);
     }
 
 
@@ -150,31 +160,12 @@ public class HttpContext {
      */
     public boolean auth(String permission) {
         if (permission == null || permission.isEmpty()) throw new IllegalArgumentException("permission is empty");
-        if (!getSessionAttr("permissions", Set.class).contains(permission)) {
+        Object ps = getSessionAttr("permissions");
+        if (ps == null || !ps.toString().contains(permission)) {
             response.status(403);
             throw new AccessControlException("没有权限");
         }
         return true;
-//        def doAuth = {Set<String> uAuthorities -> // 权限验证函数
-//            if (uAuthorities.contains(permission)) return true
-//            else throw new AccessControlException('没有权限')
-//        }
-//
-//        Set<String> uPermissions = getSessionAttr('permissions', Set) // 当前用户的所有权限. 例: auth1,auth2,auth3
-//        if (uPermissions != null) {
-//            def f = doAuth(uPermissions)
-//            if (f) return true
-//        }
-        // else uPermissions = ConcurrentHashMap.newKeySet()
-
-//        // 收集用户权限
-//        Set<String> uRoles = getSessionAttr('roles', Set) // 当前用户的角色. 例: role1,role2,role3
-//        if (uRoles == null) throw new AccessControlException('没有权限')
-//        uRoles.each {role ->
-//            server.attr('role')[(role)].each {String auth -> uPermissions.add(auth)}
-//        }
-        // setSessionAttr('uPermissions', uPermissions)
-//        doAuth(uPermissions)
     }
 
 
@@ -227,6 +218,19 @@ public class HttpContext {
                     aioStream.write(ByteBuffer.wrap(bodyBs)); // 写body
                 } else if (body instanceof File) {
                     renderFile((File) body);
+                } else if (response.getContentType() != null) {
+                    String ct = response.getContentType();
+                    if (ct.contains("application/json")) {
+                        byte[] bodyBs = JSON.toJSONString(body, SerializerFeature.WriteMapNullValue).getBytes(server.getCharset());
+                        response.contentLengthIfNotSet(bodyBs.length);
+                        aioStream.write(ByteBuffer.wrap(preRespBytes()));
+                        aioStream.write(ByteBuffer.wrap(bodyBs));
+                    } else if (ct.contains("text/plain")) {
+                        byte[] bodyBs = body.toString().getBytes(server.getCharset());
+                        response.contentLengthIfNotSet(bodyBs.length);
+                        aioStream.write(ByteBuffer.wrap(preRespBytes()));
+                        aioStream.write(ByteBuffer.wrap(bodyBs));
+                    } else throw new Exception("Support response Content-Type: " + ct);
                 } else throw new Exception("Support response type: " + body.getClass().getName());
             }
             determineClose();

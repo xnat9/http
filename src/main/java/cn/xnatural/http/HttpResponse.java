@@ -119,14 +119,9 @@ public class HttpResponse {
     }
 
 
-    public HttpResponse contentType(CharSequence contentType) { return header("content-type", contentType); }
+    public String getContentType() { return header(CONTENT_TYPE); }
 
-
-    public HttpResponse contentDisposition(CharSequence contentDisposition) { return header("Content-Disposition", contentDisposition); }
-
-
-    public HttpResponse transferEncoding(CharSequence transferEncoding) { return header("Transfer-Encoding", transferEncoding); }
-
+    public HttpResponse contentType(CharSequence contentType) { return header(CONTENT_TYPE, contentType); }
 
     public HttpResponse contentTypeIfNotSet(CharSequence contentType) {
         if (!headers.containsKey(CONTENT_TYPE)) {
@@ -134,6 +129,12 @@ public class HttpResponse {
         }
         return this;
     }
+
+
+    public HttpResponse contentDisposition(CharSequence contentDisposition) { return header("Content-Disposition", contentDisposition); }
+
+
+    public HttpResponse transferEncoding(CharSequence transferEncoding) { return header("Transfer-Encoding", transferEncoding); }
 
 
     public HttpResponse contentLengthIfNotSet(int length) {

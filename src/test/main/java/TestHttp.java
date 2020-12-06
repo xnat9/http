@@ -19,6 +19,6 @@ public class TestHttp {
         })).ctrls( // 添加Controller层类
                 MainCtrl.class, TestCtrl.class
         ).start();
-        Thread.sleep(1000 * 60 * 100);
+        Thread.sleep(1000 * 60 * 10);
     }
 }

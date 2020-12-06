@@ -1,8 +1,5 @@
 package cn.xnatural.http;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.LinkedList;
 import java.util.ListIterator;
 import java.util.Map;
@@ -108,11 +105,12 @@ public class Chain {
      * 指定方法,路径处理器
      * @param method get, post, delete ...
      * @param path 匹配路径
-     * @param contentTypes application/json, multipart/form-data, application/x-www-form-urlencoded, text/plain
+     * @param contentTypes 请求Content-Type: application/json, multipart/form-data, application/x-www-form-urlencoded, text/plain
+     * @param produce 响应Content-Type: application/json, text/plain, text/html, image/x-icon 等等
      * @param handler 处理器
      * @return
      */
-    public Chain method(String method, String path, String[] contentTypes, Handler handler) {
+    public Chain method(String method, String path, String[] contentTypes, String produce, Handler handler) {
         if (path == null || path.isEmpty()) throw new IllegalArgumentException("path mut not be empty");
         return add(new PathHandler() {
             @Override
@@ -146,6 +144,7 @@ public class Chain {
                 if (hCtx.response.status != null && (415 == hCtx.response.status || 405 == hCtx.response.status)) {
                     hCtx.response.status = null; // 重新找到匹配的Handler
                 }
+                if (produce != null && !produce.isEmpty()) hCtx.response.contentType(produce);
                 return true;
             }
         });
@@ -188,22 +187,22 @@ public class Chain {
 
 
     public Chain path(String path, Handler handler) {
-        return method(null, path, null, handler);
+        return method(null, path, null, null, handler);
     }
 
 
     public Chain get(String path, Handler handler) {
-        return method("get", path, null, handler);
+        return method("get", path, null, null, handler);
     }
 
 
     public Chain post(String path, Handler handler) {
-        return method("post", path, null, handler);
+        return method("post", path, null, null, handler);
     }
 
 
     public Chain delete(String path, Handler handler) {
-        return method("delete", path, null, handler);
+        return method("delete", path, null, null, handler);
     }
 
 
@@ -214,7 +213,7 @@ public class Chain {
      * 例: 前缀: a/b, a/c a对应的Chain下边有两个子Chain b和c
      * @param prefix 路径前缀
      * @param handlerBuilder mvc执行链builder
-     * @return Chain
+     * @return {@link Chain}
      */
     public Chain prefix(final String prefix, final Consumer<Chain> handlerBuilder) {
         Chain subChain = this;

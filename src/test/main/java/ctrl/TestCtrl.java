@@ -1,6 +1,5 @@
 package ctrl;
 
-import cn.xnatural.enet.event.EL;
 import cn.xnatural.http.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,9 +10,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static cn.xnatural.http.ApiResp.fail;
 import static cn.xnatural.http.ApiResp.ok;
-import static javax.management.Query.attr;
 
 /**
  * 常用接口例子
@@ -35,8 +32,7 @@ public class TestCtrl {
         log.info("filter2 ============");
     }
 
-    @EL(name = "testWsMsg")
-    void wsMsgBroadcast(String msg) {
+    public void wsMsgBroadcast(String msg) {
         wss.forEach(ws -> ws.send(msg));
     }
 
@@ -50,6 +46,11 @@ public class TestCtrl {
             @Override
             public void onText(String msg) {
                 log.info("test ws receive client msg: {}", msg);
+            }
+
+            @Override
+            public void onBinary(byte[] msg) {
+
             }
         });
         wsMsgBroadcast("上线: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()));
