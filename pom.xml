@@ -34,7 +34,7 @@
 
 
     <name>http</name>
-    <description>基于 https://gitee.com/xnat/aio</description>
+    <description>轻量级http 服务, 基于jdk aio</description>
 
     <licenses>
         <license>
