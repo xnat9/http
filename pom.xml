@@ -7,7 +7,7 @@
     <groupId>cn.xnatural.http</groupId>
     <artifactId>http</artifactId>
     <packaging>jar</packaging>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
 
     <url>https://gitee.com/xnat/http</url>
 

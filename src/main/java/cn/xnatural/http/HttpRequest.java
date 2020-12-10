@@ -56,9 +56,9 @@ public class HttpRequest {
                 entry = entry.trim();
                 if (entry.isEmpty()) continue;
                 String[] arr = entry.split("=");
-                cookies.put(arr[0], arr.length > 1 ? null : arr[1]);
+                cookies.put(arr[0], arr.length > 1 ? arr[1] : null);
             }
-            return cookies;
+            return Collections.unmodifiableMap(cookies);
         }
     });
     /**
