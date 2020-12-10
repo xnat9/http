@@ -62,8 +62,8 @@ public class HttpResponse {
                         + (maxAge == null ? "" : "; max-age="+maxAge)
                         + (domain == null ? "" : "; domain="+domain)
                         + (path == null ? "" : "; path="+path)
-                        + (secure == true ? "; secure": "")
-                        + (httpOnly == true ? "; httpOnly": "")
+                        + (Boolean.TRUE.equals(secure) ? "; secure": "")
+                        + (Boolean.TRUE.equals(httpOnly) ? "; httpOnly": "")
         );
         return this;
     }
