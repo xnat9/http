@@ -1,5 +1,6 @@
 package cn.xnatural.http;
 
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.ListIterator;
 import java.util.Map;
@@ -112,6 +113,7 @@ public class Chain {
      */
     public Chain method(String method, String path, String[] contentTypes, String produce, Handler handler) {
         if (path == null || path.isEmpty()) throw new IllegalArgumentException("path mut not be empty");
+        if (contentTypes != null && contentTypes.length > 0 && Arrays.stream(contentTypes).anyMatch(s -> s == null || s.isEmpty())) throw new IllegalArgumentException("@Path consumer config error");
         return add(new PathHandler() {
             @Override
             public void handle(HttpContext ctx) throws Throwable {
@@ -131,9 +133,12 @@ public class Chain {
                 }
                 if (contentTypes != null && contentTypes.length > 0) {
                     boolean f = false;
-                    for (String contentType: contentTypes) {
-                        if (contentType.split(";")[0].equalsIgnoreCase(hCtx.request.getContentType().split(";")[0])) {
-                            f = true; break;
+                    String ct = hCtx.request.getContentType(); // 匹配请求的Content-Type
+                    if (ct != null) {
+                        for (String contentType: contentTypes) {
+                            if (contentType.split(";")[0].equalsIgnoreCase(ct.split(";")[0])) {
+                                f = true; break;
+                            }
                         }
                     }
                     if (!f) {

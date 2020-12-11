@@ -98,12 +98,12 @@ public class HttpServer {
      * @param exec
      */
     public HttpServer(Map<String, Object> attrs, ExecutorService exec) {
-        this.attrs = attrs == null ? new HashMap<>() : attrs;
+        this.attrs = attrs == null ? new ConcurrentHashMap<>() : attrs;
         this.exec = exec == null ? new ThreadPoolExecutor(
-                8,16, 2, TimeUnit.HOURS,
+                4,8, 4, TimeUnit.HOURS,
                 new LinkedBlockingQueue<>(),
                 new ThreadFactory() {
-                    final AtomicInteger i = new AtomicInteger(1);
+                    AtomicInteger i = new AtomicInteger(1);
                     @Override
                     public Thread newThread(Runnable r) {
                         return new Thread(r, "http-" + i.getAndIncrement());

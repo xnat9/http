@@ -6,7 +6,7 @@ import java.util.function.Supplier;
  * Groovy @Lazy 实现
  * @param <T>
  */
-public class LazySupplier<T> implements Supplier<T> {
+class LazySupplier<T> implements Supplier<T> {
     private final Supplier<T> supplier;
     // 只执行一次
     private boolean       once = false;
