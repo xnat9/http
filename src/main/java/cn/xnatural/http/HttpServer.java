@@ -300,8 +300,8 @@ public class HttpServer {
                         hCtx.response.header("Upgrade", "websocket");
                         hCtx.response.header("Connection", "Upgrade");
 
-                        byte[] bs1 = hCtx.request.getHeader("Sec-WebSocket-Key").getBytes("utf-8");
-                        byte[] bs2 = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes("utf-8");
+                        byte[] bs1 = hCtx.request.getHeader("Sec-WebSocket-Key").getBytes(_charset.get());
+                        byte[] bs2 = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes(_charset.get());
                         byte[] bs = new byte[bs1.length + bs2.length];
                         System.arraycopy(bs1, 0, bs, 0, bs1.length);
                         System.arraycopy(bs2, 0, bs, bs1.length, bs2.length);
