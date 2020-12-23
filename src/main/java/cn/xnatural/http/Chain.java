@@ -58,6 +58,7 @@ public class Chain {
             hCtx.response.statusIfNotSet(404);
             log.warn("Request {}({}). id: {}, url: {}", HttpResponse.statusMsg.get(hCtx.response.status), hCtx.response.status, hCtx.request.getId(), hCtx.request.getRowUrl());
             hCtx.render();
+            hCtx.close();
         } else if (hCtx.response.status != null) { // 已经设置了status
             log.warn("Request {}({}). id: {}, url: {}", HttpResponse.statusMsg.get(hCtx.response.status), hCtx.response.status, hCtx.request.getId(), hCtx.request.getRowUrl());
             hCtx.render();

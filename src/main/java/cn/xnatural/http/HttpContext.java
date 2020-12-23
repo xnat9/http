@@ -253,6 +253,7 @@ public class HttpContext {
             log.warn("Request {}({}). id: {}, url: {}", HttpResponse.statusMsg.get(response.status), response.status, request.getId(), request.getRowUrl());
             response.contentLengthIfNotSet(0);
             aioStream.write(ByteBuffer.wrap(preRespBytes()));
+            close();
             return;
         }
         if (file.getName().endsWith(".html")) {
