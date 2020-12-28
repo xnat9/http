@@ -66,42 +66,43 @@
                 if (file.size > 1024 * 1024 * 5) { // 如果文件大于5M 就分片上传
                     this.pieceUpload(file);
                     return
+                } else {
+                    $.ajax({
+                        url: 'test/upload',
+                        type: 'post',
+                        data: fd,
+                        contentType: false,
+                        processData: false,
+                        success: function (resp) {
+                            if (resp.code == '00') _this.addResult = resp;
+                            else app.$Notice.error({title: '错误提示', desc: resp.desc, duration: 7})
+                        }
+                    })
                 }
-                $.ajax({
-                    url: 'test/upload',
-                    type: 'post',
-                    data: fd,
-                    contentType: false,
-                    processData: false,
-                    success: function (resp) {
-                        if (resp.code == '00') _this.addResult = resp;
-                        else app.$Notice.error({title: '错误提示', desc: resp.desc, duration: 7})
-                    }
-                })
             },
             pieceUpload: function(file) { // 分片上传文件
-                let uploading = {
+                let uploading = { // 分片上传对象
                     file: file, name: file.name, pause: false, // 是否暂停
-                    perPieceSize: 1024 * 800,
+                    perPieceSize: 1024 * 1020, // 稍微小于服务端接收数据缓存(maxMsgSize)的大小
                     totalPiece: 0, currentPiece: 0,
-                    progress: 0,
+                    progress: 0, //上传的进度 0~100
                     url: null,
-                    fileId: (((1+Math.random())*0x10000)|0).toString(16) + (((1+Math.random())*0x10000)|0).toString(16) + '_' + new Date().getTime()
+                    uploadId: (((1+Math.random())*0x10000)|0).toString(16) + (((1+Math.random())*0x10000)|0).toString(16) + '_' + new Date().getTime()
                 };
                 uploading.totalPiece = Math.ceil(file.size / uploading.perPieceSize);
-                this.pendingFiles.push(uploading);
+                this.pendingFiles.push(uploading); // 保存已上传的分片信息
                 this.doUpload(uploading)
             },
-            doUpload: function(uploading) {
+            doUpload: function(uploading) { //上传某一个分片
                 let _this = this;
                 let fd = new FormData();
                 let startIndex = uploading.currentPiece * uploading.perPieceSize;
                 let endIndex = Math.min(startIndex + uploading.perPieceSize, uploading.file.size);
-                fd.append('filePiece', uploading.file.slice(startIndex, endIndex));
-                fd.append('originName', uploading.name);
-                fd.append('fileId', uploading.fileId);
-                fd.append('currentPiece', (++uploading.currentPiece));
-                fd.append('totalPiece', uploading.totalPiece);
+                fd.append('filePiece', uploading.file.slice(startIndex, endIndex)); //分割当前上传的数据段
+                fd.append('originName', uploading.name); // 文件原始名
+                fd.append('uploadId', uploading.uploadId); //上传id, 用于集合所有分片
+                fd.append('currentPiece', (++uploading.currentPiece)); // 当前第几个分片
+                fd.append('totalPiece', uploading.totalPiece); // 总分片数
                 $.ajax({
                     url: 'test/pieceUpload',
                     type: 'post',
@@ -114,19 +115,19 @@
                                 uploading.progress = (100 / uploading.totalPiece) * uploading.currentPiece;
                                 _this.doUpload(uploading)
                             }
-                            if (uploading.totalPiece == uploading.currentPiece) {
-                                uploading.progress = 100
+                            if (uploading.totalPiece === uploading.currentPiece) {
+                                uploading.progress = 100;
                                 uploading.url = resp.data
                             }
                         } else app.$Notice.error({title: '错误提示', desc: resp.desc, duration: 7})
                     }
                 })
             },
-            suspend: function(uploading) {
+            suspend: function(uploading) { //暂停上传
                 uploading.pause = true
             },
-            resume: function(uploading) {
-                uploading.pause = false
+            resume: function(uploading) { // 恢复上传
+                uploading.pause = false;
                 this.doUpload(uploading)
             },
             downXlsx: function() {

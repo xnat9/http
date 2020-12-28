@@ -1,7 +1,6 @@
 package cn.xnatural.http;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
@@ -74,10 +73,9 @@ public class HttpDecoder {
 
     /**
      * 开始解析http请求
-     * @param buf
-     * @return
+     * @param buf 字节流
      */
-    void decode(ByteBuffer buf) throws Exception {
+    protected void decode(ByteBuffer buf) throws Exception {
         decodeCount++;
         // 1. 解析请求起始行
         if (!startLineComplete) {
@@ -103,7 +101,7 @@ public class HttpDecoder {
 
     /**
      * 解析: 请求起始行
-     * @param buf
+     * @param buf 字节流
      */
     protected boolean startLine(ByteBuffer buf) throws Exception {
         String firstLine = readLine(buf);
@@ -128,11 +126,10 @@ public class HttpDecoder {
 
     /**
      * 解析: 请求头
-     * @param buf
+     * @param buf 字节流
      */
     protected boolean header(ByteBuffer buf) throws Exception {
         do {
-            buf.position();
             String headerLine = readLine(buf);
             if (headerLine == null) break;
             if ("\r".equals(headerLine)) return true; // 请求头结束
@@ -145,7 +142,7 @@ public class HttpDecoder {
 
     /**
      * 解析: 请求体
-     * @param buf
+     * @param buf 字节流
      */
     protected boolean body(ByteBuffer buf) throws Exception {
         String ct = request.getContentType();
@@ -176,7 +173,7 @@ public class HttpDecoder {
 
     /**
      * 遍历读一个part
-     * @param buf
+     * @param buf 字节流
      * @return true: 读完, false 未读完(数据不够)
      */
     protected boolean readMultipart(ByteBuffer buf) throws Exception {
@@ -216,7 +213,7 @@ public class HttpDecoder {
 
     /**
      * 读 Multipart 中的 Header部分
-     * @param buf
+     * @param buf 字节流
      * @return true: 读完, false 未读完(数据不够)
      */
     protected boolean readMultipartHeader(ByteBuffer buf) throws Exception {
@@ -243,7 +240,7 @@ public class HttpDecoder {
 
     /**
      * 读 Multipart 中的 Value 部分
-     * @param buf 数据
+     * @param buf 字节流
      * @return true: 读完, false 未读完(数据不够)
      */
     protected boolean readMultipartValue(ByteBuffer buf) throws Exception {
@@ -251,7 +248,7 @@ public class HttpDecoder {
             int index = indexOf(buf, ("\r\n--" + boundary.get()).getBytes(request.session.server.getCharset()));
             if (curPart.tmpFile == null) { // 临时存放文件
                 curPart.tmpFile = File.createTempFile(request.getId(), FileData.extractFileExtension(curPart.filename));
-                curPart.fd = new FileData().setOriginName(curPart.filename).setFile(curPart.tmpFile).setInputStream(new FileInputStream(curPart.tmpFile)).setSize(curPart.tmpFile.length());
+                curPart.fd = new FileData().setOriginName(curPart.filename).setFile(curPart.tmpFile);
                 request.session.tmpFiles.add(curPart.tmpFile);
                 if (multiForm.containsKey(curPart.name)) { // 有多个值
                     Object v = multiForm.get(curPart.name);
@@ -268,7 +265,6 @@ public class HttpDecoder {
                     buf.get(bs); //先读到内存 减少io
                     os.write(bs);
                 }
-                // curPart.fd.setSize(curPart.fd.getSize() + length);
                 return false;
             } else { //文件最后的内容
                 int length = index - buf.position();
@@ -309,8 +305,8 @@ public class HttpDecoder {
 
     /**
      * 读一行文本
-     * @param buf
-     * @return
+     * @param buf 字节流
+     * @return 一行字符串
      */
     protected String readLine(ByteBuffer buf) throws Exception {
         byte[] lineDelimiter = "\n".getBytes(request.session.server.getCharset());
@@ -330,7 +326,7 @@ public class HttpDecoder {
 
     /**
      * 查找分割符所匹配下标
-     * @param buf
+     * @param buf 字节流
      * @param delim 分隔符
      * @return 下标位置
      */

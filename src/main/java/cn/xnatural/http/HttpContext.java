@@ -6,9 +6,9 @@ import com.alibaba.fastjson.serializer.SerializerFeature;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
-import java.io.Serializable;
 import java.lang.reflect.Array;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
@@ -89,17 +89,21 @@ public class HttpContext {
 
 
     /**
-     * session id(会话id)
-     * @return
+     * 从cookie中取session 标识
+     * @return session id(会话id)
      */
-    public String getSessionId() { return (String) sessionSupplier.get().get("id"); }
+    public String getSessionId() {
+        Map<String, Object> data = sessionSupplier.get();
+        if (data == null) return null;
+        return (String) data.get("id");
+    }
 
 
     /**
      * 设置请求属性
-     * @param key
-     * @param value
-     * @return
+     * @param key 属性key
+     * @param value 属性值
+     * @return {@link HttpContext}
      */
     public HttpContext setAttr(String key, Object value) { attrs.put(key, value); return this; }
 
@@ -121,7 +125,7 @@ public class HttpContext {
      * 设置 session 属性
      * @param aName 属性名
      * @param value 属性值
-     * @return
+     * @return {@link HttpContext}
      */
     public HttpContext setSessionAttr(String aName, Object value) {
         if (sessionSupplier.get() == null) return this;
@@ -177,7 +181,7 @@ public class HttpContext {
 
     /**
      * 响应请求
-     * @param body
+     * @param body 响应内容
      */
     public void render(Object body) {
         if (!response.commit.compareAndSet(false, true)) {
@@ -211,11 +215,6 @@ public class HttpContext {
                     response.contentLengthIfNotSet(bodyBs.length);
                     aioStream.write(ByteBuffer.wrap(preRespBytes()));
                     aioStream.write(ByteBuffer.wrap(bodyBs));
-                } else if (body instanceof byte[]) {
-                    byte[] bodyBs = (byte[]) body;
-                    response.contentLengthIfNotSet(bodyBs.length);
-                    aioStream.write(ByteBuffer.wrap(preRespBytes())); //写header
-                    aioStream.write(ByteBuffer.wrap(bodyBs)); // 写body
                 } else if (body instanceof File) {
                     renderFile((File) body);
                 } else if (response.getContentType() != null) {
@@ -230,8 +229,8 @@ public class HttpContext {
                         response.contentLengthIfNotSet(bodyBs.length);
                         aioStream.write(ByteBuffer.wrap(preRespBytes()));
                         aioStream.write(ByteBuffer.wrap(bodyBs));
-                    } else throw new Exception("Support response Content-Type: " + ct);
-                } else throw new Exception("Support response type: " + body.getClass().getName());
+                    } else throw new Exception("Not support response Content-Type: " + ct);
+                } else throw new Exception("Not support response type: " + body.getClass().getName());
             }
             determineClose();
         } catch (Exception ex) {
@@ -244,7 +243,7 @@ public class HttpContext {
     /**
      * 渲染文件
      * 分块传送. js 加载不全, 可能是网速限制的原因
-     * @param file
+     * @param file 文件
      * @throws Exception
      */
     protected void renderFile(File file) throws Exception {
@@ -253,8 +252,7 @@ public class HttpContext {
             log.warn("Request {}({}). id: {}, url: {}", HttpResponse.statusMsg.get(response.status), response.status, request.getId(), request.getRowUrl());
             response.contentLengthIfNotSet(0);
             aioStream.write(ByteBuffer.wrap(preRespBytes()));
-            close();
-            return;
+            close(); return;
         }
         if (file.getName().endsWith(".html")) {
             response.contentTypeIfNotSet("text/html");
@@ -264,23 +262,23 @@ public class HttpContext {
             response.contentTypeIfNotSet("application/javascript");
         }
 
-        int chunkedSize = chunkedSize((int) file.length(), File.class);
-        if (chunkedSize < 0) { // 文件整块传送
+        int chunkedSize = server.chunkedSize((int) file.length(), File.class);
+        if (chunkedSize < 0) { // 不分块, 文件整块传送
             byte[] content = new byte[(int) file.length()]; // 一次性读出来, 减少IO
-            try (InputStream is = new FileInputStream(file)) { is.read(content); }
+            try (InputStream fis = new FileInputStream(file)) { fis.read(content); }
             response.contentLengthIfNotSet(content.length);
             aioStream.write(ByteBuffer.wrap(preRespBytes())); //1. 先写header
             aioStream.write(ByteBuffer.wrap(content)); //2. 再写body
-        } else { //文件分块传送
+        } else { // 文件分块传送
             // response.contentLengthIfNotSet((int) file.length());
             response.transferEncoding("chunked");
             response.contentTypeIfNotSet("application/octet-stream");
             aioStream.write(ByteBuffer.wrap(preRespBytes())); // 1. 先写公共header
-            try (InputStream is = new FileInputStream(file)) { // 2. 再写文件内容
+            try (InputStream fis = new FileInputStream(file)) { // 2. 再写文件内容
                 byte[] buf = new byte[chunkedSize]; // 数据缓存buf
                 boolean end;
                 do {
-                    int length = is.read(buf); // 一批一批的读, 减少IO
+                    int length = fis.read(buf); // 一批一批的读, 减少IO
                     end = length < chunkedSize; // 是否已结束(当读出来的数据少于chunkedSize)
                     if (length > 0) {
                         aioStream.write(ByteBuffer.wrap((Integer.toHexString(length) + "\r\n").getBytes(server.getCharset()))); //1. 写chunked: header
@@ -294,31 +292,6 @@ public class HttpContext {
         }
     }
 
-
-    /**
-     * 分段传送, 每段大小
-     * @param size 总字节大小
-     * @param type 类型
-     * @return 每段大小. <0: 不分段
-     */
-    protected int chunkedSize(int size, Class type) {
-        int chunkedSize = -1;
-        if (File.class.equals(type)) {
-            // 下载限速
-            if (size > 1024 * 1024 * 50) { // 大于50M
-                chunkedSize = 1024 * 1024 * 4;
-            } else if (size > 1024 * 1024) { // 大于1M
-                chunkedSize = 1024 * 1024;
-            } else if (size > 1024 * 500) { // 大于500K
-                chunkedSize = 1024 * 200;
-            } else { // 小于500K, 不需要分段传送.  限于带宽(带宽必须大于分块的最小值, 否则会导致前端接收数据不全)
-                chunkedSize = -1;
-            }
-        }
-        // TODO 其它类型暂时不分块
-        return chunkedSize;
-    }
-    
 
     /**
      * http 响应的前半部分
@@ -351,7 +324,7 @@ public class HttpContext {
      * @return
      */
     public Map<String, Object> params() {
-        Map<String, Object> params = new HashMap();
+        Map<String, Object> params = new HashMap<>();
         params.putAll(request.getJsonParams());
         params.putAll(request.getFormParams());
         params.putAll(request.getQueryParams());
@@ -407,16 +380,18 @@ public class HttpContext {
 
     /**
      * 类型转换
-     * @param v
-     * @param type
-     * @return
+     * @param v 值
+     * @param type 转换的类型
+     * @return 转换后的结果
      */
     public static <T> T to(Object v, Class<T> type) {
         if (type == null) return (T) v;
         if (v == null) return null;
         else if (String.class.equals(type)) return (T) v.toString();
         else if (Boolean.class.equals(type) || boolean.class.equals(type)) return (T) Boolean.valueOf(v.toString());
+        else if (Short.class.equals(type) || short.class.equals(type)) return (T) Short.valueOf(v.toString());
         else if (Integer.class.equals(type) || int.class.equals(type)) return (T) Integer.valueOf(v.toString());
+        else if (BigInteger.class.equals(type)) return (T) new BigInteger(v.toString());
         else if (Long.class.equals(type) || long.class.equals(type)) return (T) Long.valueOf(v.toString());
         else if (Double.class.equals(type) || double.class.equals(type)) return (T) Double.valueOf(v.toString());
         else if (Float.class.equals(type) || float.class.equals(type)) return (T) Float.valueOf(v.toString());

@@ -32,7 +32,7 @@ public class MainCtrl {
     // 文件
     @Path(path = "file/:fName")
     File file(String fName) {
-        return new File(new File(System.getProperty("java.io.tmpdir")), (fName == null ? "tmp.xlsx" : fName));
+        return new File(System.getProperty("java.io.tmpdir"), (fName == null ? "tmp.xlsx" : fName));
     }
 
 

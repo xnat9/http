@@ -34,7 +34,7 @@ public class HttpRequest {
     HttpRequest(HttpAioSession session) { this.session = session; }
 
 
-    private LazySupplier<String> _id = new LazySupplier<>(() -> {
+    private final LazySupplier<String> _id = new LazySupplier<>(() -> {
         String id = getHeader("X-Request-ID");
         if (id != null && !id.isEmpty()) return id;
         return UUID.randomUUID().toString().replace("-", "");
@@ -46,7 +46,7 @@ public class HttpRequest {
     public String getId() { return _id.get(); }
 
 
-    private LazySupplier<Map<String, String>> _cookies = new LazySupplier<>(() -> {
+    private final LazySupplier<Map<String, String>> _cookies = new LazySupplier<>(() -> {
         String cookieStr = getHeader("Cookie");
         if (cookieStr == null) return null;
         else {
@@ -72,7 +72,7 @@ public class HttpRequest {
      * 查询字符串
      * @return
      */
-    private LazySupplier<String> _queryStr = new LazySupplier<>(() -> {
+    private final LazySupplier<String> _queryStr = new LazySupplier<>(() -> {
         int i = rowUrl.indexOf("?");
         return i == -1 ? null : rowUrl.substring(i + 1);
     });
@@ -83,7 +83,7 @@ public class HttpRequest {
     public String getQueryStr() { return _queryStr.get(); }
 
 
-    private LazySupplier<Map<String, Object>> _queryParams = new LazySupplier<>(() -> {
+    private final LazySupplier<Map<String, Object>> _queryParams = new LazySupplier<>(() -> {
         if (getQueryStr() != null) {
             Map<String, Object> data = new HashMap<>();
             for (String s : getQueryStr().split("&")) {
@@ -117,7 +117,7 @@ public class HttpRequest {
 
 
     // 懒计算(只计算一次)例子
-    private LazySupplier<String> _path = new LazySupplier<>(() -> {
+    private final LazySupplier<String> _path = new LazySupplier<>(() -> {
         int i = rowUrl.indexOf("?");
         return i == -1 ? rowUrl : rowUrl.substring(0, i);
     });
@@ -128,7 +128,7 @@ public class HttpRequest {
     public String getPath() { return _path.get(); }
 
 
-    private LazySupplier<Map<String, Object>> _formParams = new LazySupplier<>(() -> {
+    private final LazySupplier<Map<String, Object>> _formParams = new LazySupplier<>(() -> {
         String ct = getContentType();
         if (bodyStr != null && !bodyStr.isEmpty() && ct != null && ct.contains("application/x-www-form-urlencoded")) {
             Map<String, Object> data = new HashMap<>();
@@ -166,7 +166,7 @@ public class HttpRequest {
     public Map<String, Object> getFormParams() { return _formParams.get(); }
 
 
-    private LazySupplier<Map<String, Object>> _jsonParams = new LazySupplier<>(() -> {
+    private final LazySupplier<Map<String, Object>> _jsonParams = new LazySupplier<>(() -> {
         String ct = getContentType();
         if (bodyStr != null && !bodyStr.isEmpty() && ct != null && ct.contains("application/json")) {
             try {
@@ -236,7 +236,7 @@ public class HttpRequest {
     /**
      * 取Header值
      * @param hName header 名
-     * @return
+     * @return header 值
      */
     public String getHeader(String hName) { return headers.get(hName.toLowerCase()); }
 
@@ -254,31 +254,31 @@ public class HttpRequest {
 
     /**
      * http 协议: http, https
-     * @return
+     * @return http or https
      */
     public String getProtocol() { return protocol; }
 
     /**
      * 请求方法: get, post...
-     * @return
+     * @return get, post...
      */
     public String getMethod() { return method; }
 
     /**
      * 原始url
-     * @return
+     * @return 原始url
      */
     public String getRowUrl() { return rowUrl; }
 
     /**
      * http 版本
-     * @return
+     * @return 1.0 or 1.1
      */
     public String getVersion() { return version; }
 
     /**
      * 请求body字符串
-     * @return
+     * @return str
      */
     public String getBodyStr() { return bodyStr; }
 }

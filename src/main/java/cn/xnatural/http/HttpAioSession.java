@@ -23,7 +23,7 @@ public class HttpAioSession {
     protected              Long                      lastUsed    = System.currentTimeMillis();
     protected final AtomicBoolean closed      = new AtomicBoolean(false);
     // 每次接收消息的内存空间(文件上传大小限制)
-    protected final LazySupplier<ByteBuffer> _buf = new LazySupplier<>(() -> ByteBuffer.allocate(server.getInteger("maxMsgSize", 1024 * 1024 * 1)));
+    protected final LazySupplier<ByteBuffer> _buf = new LazySupplier<>(() -> ByteBuffer.allocate(server.getInteger("maxMsgSize", 1024 * 1024)));
     // 不为空代表是WebSocket
     protected WebSocket ws;
     // 当前解析的请求
@@ -101,7 +101,7 @@ public class HttpAioSession {
 
     /**
      * 读数据, 解析数据
-     * @param buf
+     * @param buf 请求字节流
      */
     protected void doRead(ByteBuffer buf) {
         if (ws != null) { // 是 WebSocket的情况
@@ -112,7 +112,7 @@ public class HttpAioSession {
                 close();
             }
         } else { // 正常 http 请求
-            if (request == null) {request = new HttpRequest(HttpAioSession.this); }
+            if (request == null) {request = new HttpRequest(this); }
             try {
                 request.decoder.decode(buf);
             } catch (Exception ex) {
@@ -121,7 +121,7 @@ public class HttpAioSession {
             }
             if (request.decoder.complete) {
                 if (request.decoder.websocket) { // 创建WebSocket 会话
-                    ws = new WebSocket(HttpAioSession.this);
+                    ws = new WebSocket(this);
                     server.receive(request);
                 } else {
                     HttpRequest req = request; request = null; // 接收下一个请求

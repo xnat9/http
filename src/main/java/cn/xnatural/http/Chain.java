@@ -29,17 +29,17 @@ public class Chain {
 
     /**
      * 执行此Chain
-     * @param hCtx
+     * @param hCtx {@link HttpContext}
      */
     protected void handle(HttpContext hCtx) {
         boolean match = false;
         for (Handler h: handlers) { // 遍历查找匹配的Handler
-            if (h instanceof FilterHandler) {
+            if (h instanceof FilterHandler) { // 执行Filter, 可执行多个Filter
                 try {
                     hCtx.passedHandler.add(h);
                     h.handle(hCtx);
                 } catch (Throwable ex) {server.errHandle(ex, hCtx);}
-            } else if (h instanceof PathHandler) {
+            } else if (h instanceof PathHandler) { //只执行一个Path
                 match = h.match(hCtx);
                 log.trace((match ? "Matched" : "Unmatch") + " {}, {}", ((PathHandler) h).path(), hCtx.request.getPath());
                 if (match) {
@@ -70,8 +70,8 @@ public class Chain {
      * 添加Handler
      * 按优先级添加, 相同类型比较, FilterHandler > PathHandler
      * [filter2, filter1, path3, path2, path1]
-     * @param handler
-     * @return
+     * @param handler {@link Handler}
+     * @return {@link Chain}
      */
     protected Chain add(Handler handler) {
         boolean added = false;
@@ -110,7 +110,7 @@ public class Chain {
      * @param contentTypes 请求Content-Type: application/json, multipart/form-data, application/x-www-form-urlencoded, text/plain
      * @param produce 响应Content-Type: application/json, text/plain, text/html, image/x-icon 等等
      * @param handler 处理器
-     * @return
+     * @return {@link Chain}
      */
     public Chain method(String method, String path, String[] contentTypes, String produce, Handler handler) {
         if (path == null || path.isEmpty()) throw new IllegalArgumentException("path mut not be empty");
@@ -159,7 +159,7 @@ public class Chain {
 
     /**
      * 添加 websocket Handler
-     * @return
+     * @return {@link Chain}
      */
     public Chain ws(String path, Handler handler) {
         return add(new WSHandler() {
@@ -176,8 +176,8 @@ public class Chain {
 
     /**
      * 添加Filter, 默认匹配
-     * @param handler
-     * @return
+     * @param handler {@link Handler}
+     * @return {@link Chain}
      */
     public Chain filter(Handler handler, int order) {
         return add(new FilterHandler() {

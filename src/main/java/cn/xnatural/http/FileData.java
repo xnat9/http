@@ -1,9 +1,6 @@
 package cn.xnatural.http;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -61,53 +58,57 @@ public class FileData {
 
 
     /**
-     * 写入到 目录
-     * @param dir
+     * 把文件写入到目录
+     * @param dir 目录
      */
     public void transferTo(File dir) throws Exception {
+        if (dir == null) throw new IllegalArgumentException("Param dir required");
+        if (!dir.isDirectory()) throw new IllegalArgumentException("Param dir must be a directory");
         dir.mkdirs();
         File f = new File(dir, finalName);
         if (!f.exists()) f.createNewFile();
         byte[] bs = new byte[((Supplier<Integer>) () -> {
-            if (size > 1024 * 1024 * 100) return 1024 * 1024 * 5;
-            if (size > 1024 * 1024 * 50) return 1024 * 1024 * 2;
-            if (size > 1024 * 1024 * 10) return 1024 * 1024 * 1;
-            if (size > 1024 * 1024 * 5) return 1024 * 500;
-            if (size > 1024 * 1024 * 1) return 1024 * 100;
+            if (size > 1024 * 1024 * 100) return 1024 * 1024 * 10;
+            if (size > 1024 * 1024 * 50) return 1024 * 1024 * 6;
+            if (size > 1024 * 1024 * 10) return 1024 * 1024;
+            if (size > 1024 * 1024 * 5) return 1024 * 600;
+            if (size > 1024 * 1024) return 1024 * 200;
             return 1024 * 20;
         }).get()];
-        try (OutputStream os = new FileOutputStream(f)) {
+        try (OutputStream fos = new FileOutputStream(f)) {
             while (true) {
-                int length = inputStream.read(bs);
+                int length = getInputStream().read(bs);
                 if (length == -1) break;
-                os.write(bs, 0, length);
+                fos.write(bs, 0, length);
             }
         }
     }
 
 
     /**
-     * 追加到文件
-     * @param targetFile
+     * 追加到另一个文件
+     * @param targetFile 目标文件
      */
     public void appendTo(File targetFile) throws Exception {
+        if (targetFile == null) throw new IllegalArgumentException("Param targetFile required");
+        if (targetFile.isDirectory()) throw new IllegalArgumentException("Param targetFile must be a file");
         if (!targetFile.exists()) { //不存在则创建
             targetFile.getParentFile().mkdirs();
             targetFile.createNewFile();
         }
         byte[] bs = new byte[((Supplier<Integer>) () -> {
-            if (size > 1024 * 1024 * 100) return 1024 * 1024 * 5;
-            if (size > 1024 * 1024 * 50) return 1024 * 1024 * 2;
-            if (size > 1024 * 1024 * 10) return 1024 * 1024 * 1;
-            if (size > 1024 * 1024 * 5) return 1024 * 500;
-            if (size > 1024 * 1024 * 1) return 1024 * 100;
+            if (size > 1024 * 1024 * 100) return 1024 * 1024 * 10;
+            if (size > 1024 * 1024 * 50) return 1024 * 1024 * 6;
+            if (size > 1024 * 1024 * 10) return 1024 * 1024;
+            if (size > 1024 * 1024 * 5) return 1024 * 600;
+            if (size > 1024 * 1024) return 1024 * 200;
             return 1024 * 20;
         }).get()];
-        try (OutputStream os = new FileOutputStream(targetFile, false)) {
+        try (OutputStream fos = new FileOutputStream(targetFile, true)) {
             while (true) {
-                int length = inputStream.read(bs);
+                int length = getInputStream().read(bs);
                 if (length == -1) break;
-                os.write(bs, 0, length);
+                fos.write(bs, 0, length);
             }
         }
     }
@@ -117,6 +118,9 @@ public class FileData {
      * 删除
      */
     public void delete() {
+        if (inputStream != null) {
+            try { inputStream.close(); } catch (IOException e) {/** ignore **/}
+        }
         inputStream = null; size = null;
         if (file != null) file.delete();
     }
@@ -128,20 +132,19 @@ public class FileData {
     }
 
 
-    public String getOriginName() {
-        return originName;
-    }
+    public String getOriginName() { return originName; }
 
-    public String getFinalName() {
-        return finalName;
-    }
+    public String getFinalName() { return finalName; }
 
     public FileData setFinalName(String finalName) {
         this.finalName = finalName;
         return this;
     }
 
-    public InputStream getInputStream() {
+    public InputStream getInputStream() throws FileNotFoundException {
+        if (inputStream == null && file != null) {
+            inputStream = new FileInputStream(file);
+        }
         return inputStream;
     }
 
@@ -150,27 +153,21 @@ public class FileData {
         return this;
     }
 
-    public Long getSize() {
-        return size;
-    }
+    public Long getSize() { return size; }
 
     public FileData setSize(Long size) {
         this.size = size;
         return this;
     }
 
-    public String getExtension() {
-        return extension;
-    }
+    public String getExtension() { return extension; }
 
     public FileData setExtension(String extension) {
         this.extension = extension;
         return this;
     }
 
-    public File getFile() {
-        return file;
-    }
+    public File getFile() { return file; }
 
     public FileData setFile(File file) {
         this.file = file;

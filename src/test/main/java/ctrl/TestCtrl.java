@@ -138,62 +138,65 @@ public class TestCtrl {
     }
 
 
-    // 下载文件
+    // 下载文件. 默认大于 500K 会自动分块传送
     @Path(path = "download/:fName")
     File download(String fName, HttpContext ctx) {
-        File f = new File(new File(System.getProperty("java.io.tmpdir")), (fName == null ? "tmp.xlsx" : fName));
+        File f = new File(System.getProperty("java.io.tmpdir"), (fName == null ? "tmp.xlsx" : fName));
         ctx.response.contentDisposition("attachment;filename=" + f.getName());
 //        Object wb = org.apache.poi.ss.usermodel.WorkbookFactory.create(true);
 //        Object bos = new ByteArrayOutputStream(); wb.write(bos);
         return f;
     }
 
-
+    protected final Map<String, File> tmpFiles = new ConcurrentHashMap<>();
     /**
      * 文件上传: 断点续传/持续上传/分片上传
      * 原理: 把文件分成多块 依次上传, 用同一个标识多次上传为同一个文件
+     * 多线程上传不安全
      * @param server {@link HttpServer}
      * @param filePiece 文件片
-     * @param fileId 文件id
+     * @param uploadId 上传id, 用于集合所有分片
      * @param originName 文件原名
      * @param totalPiece 总片数
      * @param currentPiece 当前第几片
      * @return
      */
-    protected final Map<String, File> tmpFiles = new ConcurrentHashMap<>();
     @Path(path = "pieceUpload")
-    ApiResp pieceUpload(HttpServer server, FileData filePiece, String fileId, String originName, Integer totalPiece, Integer currentPiece) throws Exception {
+    ApiResp pieceUpload(HttpServer server, FileData filePiece, String uploadId, String originName, Integer totalPiece, Integer currentPiece) throws Exception {
         if (filePiece == null) {return ApiResp.fail("文件片未上传");}
-        if (fileId == null || fileId.isEmpty()) {return ApiResp.fail("参数错误: fileId 不能为空");}
-        if (totalPiece == null) {return ApiResp.fail("参数错误: totalPiece 不能为空");}
-        if (totalPiece < 2) {return ApiResp.fail("参数错误: totalPiece >= 2");}
-        if (currentPiece == null) {return ApiResp.fail("参数错误: currentPiece 不能为空");}
+        if (uploadId == null || uploadId.isEmpty()) {return ApiResp.fail("Param: uploadId 不能为空");}
+        if (totalPiece == null) {return ApiResp.fail("Param: totalPiece 不能为空");}
+        if (totalPiece < 2) {return ApiResp.fail("Param: totalPiece >= 2");}
+        if (currentPiece == null) {return ApiResp.fail("Param: currentPiece 不能为空");}
         if ((originName == null || originName.isEmpty()) && currentPiece == 1) {return ApiResp.fail("参数错误: originName 不能为空");}
-        if (currentPiece < 1) {return ApiResp.fail("参数错误: currentPiece >= 1");}
-        if (totalPiece < currentPiece) {return ApiResp.fail("参数错误: totalPiece >= currentPiece");}
+        if (currentPiece < 1) {return ApiResp.fail("Param: currentPiece >= 1");}
+        if (totalPiece < currentPiece) {return ApiResp.fail("Param: totalPiece >= currentPiece");}
 
-        ApiResp<Map<String, Object>> resp = ok().attr("fileId", fileId).attr("currentPiece", currentPiece);
+        ApiResp<Map<String, Object>> resp = ok().attr("uploadId", uploadId).attr("currentPiece", currentPiece);
         if (currentPiece == 1) { // 第一个分片: 保存文件
-            tmpFiles.put(fileId, filePiece.getFile());
+            tmpFiles.put(uploadId, filePiece.getFile());
             // TODO 过一段时间还没上传完 则主动删除 server.getInteger("pieceUpload.maxKeep", 120)
         } else if (totalPiece > currentPiece) { // 后面的分片: 追加到第一个分片的文件里面去
-            File file = tmpFiles.get(fileId);
-            if (file == null) return ApiResp.of("404", "文件未找到: " + fileId).attr("originName", originName);
+            File file = tmpFiles.get(uploadId);
+            if (file == null) return ApiResp.of("404", "文件未找到: " + uploadId).attr("originName", originName);
             filePiece.appendTo(file); filePiece.delete();
 
-            long maxSize = server.getLong("pieceUpload.maxFileSize", 1024 * 1024 * 200L); // 最大上传200M
+            long maxSize = server.getLong("pieceUpload.maxFileSize", 1024 * 1024 * 900L); // 最大上传200M
             if (file.length() > maxSize) { // 文件大小验证
-                file = tmpFiles.remove(fileId);
+                file = tmpFiles.remove(uploadId);
                 file.delete();
                 return ApiResp.fail("上传文件太大, <=" + maxSize);
             }
         } else { // 最后一个分片
-            File file = tmpFiles.remove(fileId);
-            FileData fd = new FileData().setFile(file).setInputStream(new FileInputStream(file)).setOriginName(originName);
-            // TODO 传 fd 给 service 层
-            return resp.attr("complete", true);
+            File file = tmpFiles.remove(uploadId);
+            filePiece.appendTo(file); filePiece.delete();
+
+            FileData fd = new FileData().setOriginName(originName).setFile(file).setInputStream(new FileInputStream(file));
+            // TODO 另存
+            fd.transferTo(new File(System.getProperty("java.io.tmpdir")));
+            return resp.attr("finalName", fd.getFinalName());
         }
-        return resp.attr("complete", false);
+        return resp;
     }
 
 

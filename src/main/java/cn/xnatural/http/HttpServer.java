@@ -3,6 +3,7 @@ package cn.xnatural.http;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -71,7 +72,7 @@ public class HttpServer {
      * 忽略打印的请求路径后缀
      */
     protected final LazySupplier<Set<String>> _ignoreLogSuffix   = new LazySupplier<>(() -> {
-        final Set<String> set = new HashSet<>(Arrays.asList(".js", ".css", ".html", ".vue", ".png", ".ttf", ".woff", ".woff2", "favicon.ico", ".map"));
+        final Set<String> set = new HashSet<>(Arrays.asList(".js", ".css", ".html", ".vue", ".png", ".ttf", ".woff", ".woff2", ".ico", ".map"));
         for (String suffix : getStr("ignoreLogUrlSuffix", "").split(",")) {
             if (suffix != null && !suffix.trim().isEmpty()) set.add(suffix.trim());
         }
@@ -95,7 +96,7 @@ public class HttpServer {
      *              backlog: 排队连接
      *              connection.maxIdle: 连接最大存活时间
      *              maxConnection: 最大连接数
-     * @param exec
+     * @param exec 线程池
      */
     public HttpServer(Map<String, Object> attrs, ExecutorService exec) {
         this.attrs = attrs == null ? new ConcurrentHashMap<>() : attrs;
@@ -149,35 +150,35 @@ public class HttpServer {
      */
     public void stop() {
         enabled = false;
-        try { Thread.sleep(1000L); ssc.close(); } catch (Exception e) {/** ignore **/}
+        try { if (connections.size() > 5) {Thread.sleep(1000L);} ssc.close(); } catch (Exception e) {/** ignore **/}
         exec.shutdown();
     }
 
 
     /**
      * 接收新的 http 请求
-     * @param request
+     * @param request {@link HttpRequest}
      */
     protected void receive(HttpRequest request) {
         HttpContext hCtx = null;
         try {
+            counter.increment();
             // 打印请求
             if (_ignoreLogSuffix.get().stream().noneMatch((suffix) -> request.getPath().endsWith(suffix))) {
-                log.info("Start Request '{}': {}. from: " + request.session.channel.getRemoteAddress().toString(), request.getId(), request.rowUrl);
+                log.info("Start Request '{}': {}. from: " + request.session.getRemoteAddress(), request.getId(), request.rowUrl);
             }
-            counter.increment();
             hCtx = new HttpContext(request, this, this::sessionDelegate);
             if (enabled) {
                 if (connections.size() > getInteger("maxConnection", 128)) { // 限流
                     hCtx.response.status(503);
-                    hCtx.render(ApiResp.fail("服务忙, 请稍后..."));
+                    hCtx.render(ApiResp.fail("server busy, please wait..."));
                     hCtx.close();
                     return;
                 }
                 chain.handle(hCtx);
             } else {
                 hCtx.response.status(503);
-                hCtx.render(ApiResp.fail("服务忙, 请稍后..."));
+                hCtx.render(ApiResp.fail("server busy, please wait..."));
             }
         } catch (Exception ex) {
             log.error("Handle request error", ex);
@@ -188,16 +189,16 @@ public class HttpServer {
 
     /**
      * session 数据 委托对象
-     * @return
-     * @param hCtx
+     * @param hCtx {@link HttpContext}
+     * @return session 数据操作 map
      */
     protected Map<String, Object> sessionDelegate(HttpContext hCtx) { return null; }
 
 
     /**
      * 添加
-     * @param clzs
-     * @return
+     * @param clzs 包含 {@link Ctrl} 的类
+     * @return {@link HttpServer}
      */
     public HttpServer ctrls(Class...clzs) {
         if (clzs == null || clzs.length < 1) return this;
@@ -255,7 +256,7 @@ public class HttpServer {
                         try {
                             Object result = method.invoke(ctrl, Arrays.stream(ps).map((p) -> hCtx.param(p.getName(), p.getType())).toArray());
                             if (!void.class.isAssignableFrom(method.getReturnType())) {
-                                log.debug("Invoke Handler '{}#{}', result: {}", ctrl.getClass().getName(), method.getName(), result);
+                                log.debug("Invoke Handler '{}#{}', result: {}, requestId: {}", ctrl.getClass().getName(), method.getName(), result, hCtx.request.getId());
                                 hCtx.render(result);
                             }
                         } catch (InvocationTargetException ex) {
@@ -327,9 +328,9 @@ public class HttpServer {
 
 
     /**
-     * 手动构建 Chain
-     * @param buildFn
-     * @return
+     * 手动构建 执行链 Chain
+     * @param buildFn {@link Consumer<Chain>}
+     * @return {@link HttpServer}
      */
     public HttpServer buildChain(Consumer<Chain> buildFn) {
         buildFn.accept(chain);
@@ -339,8 +340,8 @@ public class HttpServer {
 
     /**
      * 错误处理
-     * @param ex
-     * @param hCtx
+     * @param ex 异常 {@link Throwable}
+     * @param hCtx {@link HttpContext}
      */
     protected void errHandle(Throwable ex, HttpContext hCtx) {
         if (ex instanceof AccessControlException) {
@@ -361,7 +362,7 @@ public class HttpServer {
 
     /**
      * 处理新连接
-     * @param channel
+     * @param channel {@link AsynchronousSocketChannel}
      */
     protected void doAccept(final AsynchronousSocketChannel channel) {
         exec.execute(() -> {
@@ -443,8 +444,34 @@ public class HttpServer {
 
 
     /**
+     * 分段传送, 每段大小
+     * @param size 总字节大小
+     * @param type 类型
+     * @return 每段大小. <0: 不分段
+     */
+    protected int chunkedSize(int size, Class type) {
+        int chunkedSize = -1;
+        if (File.class.equals(type)) {
+            // 下载限速
+            if (size > 1024 * 1024 * 50) { // 大于50M
+                chunkedSize = 1024 * 1024 * 4;
+            } else if (size > 1024 * 1024) { // 大于1M
+                chunkedSize = 1024 * 1024;
+            } else if (size > 1024 * 500) { // 大于500K
+                chunkedSize = 1024 * 200;
+            }
+            // 小文件不需要分段传送. 限于带宽(带宽必须大于分块的最小值, 否则会导致前端接收数据不全)
+        } else {
+            if (size > 1024 * 1024 * 4) throw new RuntimeException("body too large, > " + (1024 * 1024 * 4));
+        }
+        // TODO 其它类型暂时不分块
+        return chunkedSize;
+    }
+
+
+    /**
      * 获取本机 ip 地址
-     * @return
+     * @return ip
      */
     protected String ipv4() {
         try {
@@ -515,41 +542,43 @@ public class HttpServer {
 
     /**
      * 返回 host:port
-     * @return
+     * @return host:port
      */
     // @EL(name = {"http.hp", "web.hp"}, async = false)
     public String getHp() {
         String ip = _hpCfg.get().split(":")[0];
-        if ("localhost".equals(ip)) {ip = ipv4();}
+        if (ip == null || ip.isEmpty() || "localhost".equals(ip)) {ip = ipv4();}
         return ip + ":" + _port.get();
     }
 
 
     /**
      * 暴露的端口
-     * @return
+     * @return 端口
      */
     public Integer getPort() { return _port.get(); }
 
 
     /**
      * 字符集
-     * @return
+     * @return 字符集
      */
     public String getCharset() { return _charset.get(); }
 
 
     /**
      * 得到所有控制层对象
-     * @return
+     * @return 所有 {@link Ctrl}
      */
     public List getCtrls() { return new LinkedList(ctrls); }
 
 
+    /**
+     * 获取属性
+     * @param key 属性key
+     * @return 属性值
+     */
     public Object getAttr(String key) { return attrs.get(key); }
-
-
-    public Object setAttr(String key, Object value) { return attrs.put(key, value); }
 
 
     public String getStr(String key, String defaultValue) {
@@ -585,10 +614,10 @@ public class HttpServer {
 
     /**
      * sha1 加密
-     * @param bs
-     * @return
+     * @param bs 被加密byte[]
+     * @return 加密后的byte[]
      */
-    static byte[] sha1(byte[] bs) {
+    public static byte[] sha1(byte[] bs) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-1");
             digest.update(bs);
