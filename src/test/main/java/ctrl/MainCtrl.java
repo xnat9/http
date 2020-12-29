@@ -25,7 +25,7 @@ public class MainCtrl {
 
     @Path(path = "test.html")
     File testHtml(HttpContext ctx) {
-        ctx.response.cacheControl(3);
+        //ctx.response.cacheControl(3);
         return baseDir("src/test/main/resources/static/test.html");
     }
 

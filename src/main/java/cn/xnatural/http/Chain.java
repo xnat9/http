@@ -187,7 +187,7 @@ public class Chain {
             }
 
             @Override
-            public double getOrder() { return Double.valueOf(order); }
+            public double getOrder() { return order; }
         });
     }
 

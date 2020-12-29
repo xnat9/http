@@ -63,9 +63,8 @@
                 let _this = this;
                 let fd = new FormData($('#form1')[0]);
                 let file = fd.get('file');
-                if (file.size > 1024 * 1024 * 5) { // 如果文件大于5M 就分片上传
-                    this.pieceUpload(file);
-                    return
+                if (file.size > 1024 * 1024 * 10) { // 如果文件大于10M 就分片上传
+                    this.pieceUpload(file); return;
                 } else {
                     $.ajax({
                         url: 'test/upload',
@@ -83,7 +82,7 @@
             pieceUpload: function(file) { // 分片上传文件
                 let uploading = { // 分片上传对象
                     file: file, name: file.name, pause: false, // 是否暂停
-                    perPieceSize: 1024 * 1020, // 稍微小于服务端接收数据缓存(maxMsgSize)的大小
+                    perPieceSize: 1024 * 1024 * 9,
                     totalPiece: 0, currentPiece: 0,
                     progress: 0, //上传的进度 0~100
                     url: null,
@@ -113,13 +112,14 @@
                         if (resp.code == '00') {
                             if (!uploading.pause && uploading.totalPiece > uploading.currentPiece) {
                                 uploading.progress = (100 / uploading.totalPiece) * uploading.currentPiece;
+                                console.log('============', resp);
                                 _this.doUpload(uploading)
                             }
                             if (uploading.totalPiece === uploading.currentPiece) {
                                 uploading.progress = 100;
                                 uploading.url = resp.data
                             }
-                        } else app.$Notice.error({title: '错误提示', desc: resp.desc, duration: 7})
+                        } else console.log(resp.desc);
                     }
                 })
             },

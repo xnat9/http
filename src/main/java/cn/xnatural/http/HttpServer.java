@@ -91,9 +91,8 @@ public class HttpServer {
     /**
      * 创建
      * @param attrs 属性集
-     *              maxMsgSize: socket 每次取数据的最大
+     *              maxFileSize: 单文件上传大小限制. 默认20M
      *              writeTimeout: 数据写入超时时间. 单位:毫秒
-     *              backlog: 排队连接
      *              connection.maxIdle: 连接最大存活时间
      *              maxConnection: 最大连接数
      * @param exec 线程池
@@ -128,7 +127,7 @@ public class HttpServer {
             AsynchronousChannelGroup cg = AsynchronousChannelGroup.withThreadPool(exec);
             ssc = AsynchronousServerSocketChannel.open(cg);
             ssc.setOption(StandardSocketOptions.SO_REUSEADDR, true);
-            ssc.setOption(StandardSocketOptions.SO_RCVBUF, getInteger("so_revbuf", 1024 * 1024 * 4));
+            //ssc.setOption(StandardSocketOptions.SO_RCVBUF, getInteger("so_rcvbuf", 1024 * 1024 * 4));
 
             String host = _hpCfg.get().split(":")[0];
             InetSocketAddress addr = (host != null && !host.isEmpty()) ? new InetSocketAddress(host, getPort()) : new InetSocketAddress(getPort());
@@ -172,8 +171,7 @@ public class HttpServer {
                 if (connections.size() > getInteger("maxConnection", 128)) { // 限流
                     hCtx.response.status(503);
                     hCtx.render(ApiResp.fail("server busy, please wait..."));
-                    hCtx.close();
-                    return;
+                    hCtx.close(); return;
                 }
                 chain.handle(hCtx);
             } else {
@@ -182,7 +180,9 @@ public class HttpServer {
             }
         } catch (Exception ex) {
             log.error("Handle request error", ex);
-            if (hCtx != null) hCtx.close();
+            if (hCtx != null) {
+                hCtx.response.status(500); hCtx.render(); hCtx.close();
+            }
         }
     }
 
@@ -369,8 +369,8 @@ public class HttpServer {
             HttpAioSession se = null;
             try {
                 channel.setOption(StandardSocketOptions.SO_REUSEADDR, true);
-                channel.setOption(StandardSocketOptions.SO_RCVBUF, getInteger("so_rcvbuf", 1024 * 1024 * 2));
-                channel.setOption(StandardSocketOptions.SO_SNDBUF, getInteger("so_sndbuf", 1024 * 1024 * 4)); // 必须大于 chunk 最小值
+                // channel.setOption(StandardSocketOptions.SO_RCVBUF, getInteger("so_rcvbuf", 1024 * 1024));
+                // channel.setOption(StandardSocketOptions.SO_SNDBUF, getInteger("so_sndbuf", 1024 * 1024 * 4)); // 必须大于 chunk 最小值
                 channel.setOption(StandardSocketOptions.SO_KEEPALIVE, true);
                 channel.setOption(StandardSocketOptions.TCP_NODELAY, true);
 

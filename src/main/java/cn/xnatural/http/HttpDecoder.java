@@ -265,6 +265,10 @@ public class HttpDecoder {
                     buf.get(bs); //先读到内存 减少io
                     os.write(bs);
                 }
+                // 单文件上传大小限制
+                if (curPart.tmpFile.length() > request.session.server.getInteger("maxFileSize", 1024 * 1024 * 20)) {
+                    throw new RuntimeException("file too large");
+                }
                 return false;
             } else { //文件最后的内容
                 int length = index - buf.position();

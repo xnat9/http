@@ -181,7 +181,7 @@ public class TestCtrl {
             if (file == null) return ApiResp.of("404", "文件未找到: " + uploadId).attr("originName", originName);
             filePiece.appendTo(file); filePiece.delete();
 
-            long maxSize = server.getLong("pieceUpload.maxFileSize", 1024 * 1024 * 900L); // 最大上传200M
+            long maxSize = server.getLong("pieceUpload.maxFileSize", 1024 * 1024 * 200L); // 最大上传200M
             if (file.length() > maxSize) { // 文件大小验证
                 file = tmpFiles.remove(uploadId);
                 file.delete();

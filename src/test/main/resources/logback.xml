@@ -17,7 +17,7 @@
 <!--		</rollingPolicy>-->
 <!--	</appender>-->
 
-	<logger name="cn.xnatural.http" level="info"/>
+	<logger name="cn.xnatural.http" level="debug"/>
 
 	<root level="INFO">
 <!--		<appender-ref ref="DETAIL"/>-->
