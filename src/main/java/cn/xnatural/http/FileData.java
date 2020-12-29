@@ -60,13 +60,14 @@ public class FileData {
     /**
      * 把文件写入到目录
      * @param dir 目录
+     * @return 目的文件
      */
-    public void transferTo(File dir) throws Exception {
+    public File transferTo(File dir) throws Exception {
         if (dir == null) throw new IllegalArgumentException("Param dir required");
         if (!dir.isDirectory()) throw new IllegalArgumentException("Param dir must be a directory");
         dir.mkdirs();
-        File f = new File(dir, finalName);
-        if (!f.exists()) f.createNewFile();
+        File target = new File(dir, finalName);
+        if (!target.exists()) target.createNewFile();
         byte[] bs = new byte[((Supplier<Integer>) () -> {
             if (size > 1024 * 1024 * 100) return 1024 * 1024 * 10;
             if (size > 1024 * 1024 * 50) return 1024 * 1024 * 6;
@@ -75,21 +76,23 @@ public class FileData {
             if (size > 1024 * 1024) return 1024 * 200;
             return 1024 * 20;
         }).get()];
-        try (OutputStream fos = new FileOutputStream(f)) {
+        try (OutputStream fos = new FileOutputStream(target)) {
             while (true) {
                 int length = getInputStream().read(bs);
                 if (length == -1) break;
                 fos.write(bs, 0, length);
             }
         }
+        return target;
     }
 
 
     /**
      * 追加到另一个文件
      * @param targetFile 目标文件
+     * @return 目的文件
      */
-    public void appendTo(File targetFile) throws Exception {
+    public File appendTo(File targetFile) throws Exception {
         if (targetFile == null) throw new IllegalArgumentException("Param targetFile required");
         if (targetFile.isDirectory()) throw new IllegalArgumentException("Param targetFile must be a file");
         if (!targetFile.exists()) { //不存在则创建
@@ -111,6 +114,7 @@ public class FileData {
                 fos.write(bs, 0, length);
             }
         }
+        return targetFile;
     }
 
 
