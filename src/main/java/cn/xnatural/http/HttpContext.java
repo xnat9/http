@@ -13,7 +13,6 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
 import java.nio.ByteBuffer;
-import java.security.AccessControlException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -159,18 +158,17 @@ public class HttpContext {
 
     /**
      * 权限验证
-     * @param permission 权限名 验证用户是否有此权限
+     * @param permissions 权限名 验证用户是否有此权限
      * @return true: 验证通过
      */
-    public boolean auth(String permission) {
-        if (permission == null || permission.isEmpty()) throw new IllegalArgumentException("permission is empty");
-        Object ps = getSessionAttr("permissions");
-        if (ps == null || !ps.toString().contains(permission)) {
-            response.status(403);
-            throw new AccessControlException("没有权限");
-        }
-        return true;
-    }
+    public boolean auth(String... permissions) { return server.auth(this, permissions); }
+
+    /**
+     * 是否存在权限
+     * @param permissions
+     * @return true: 存在
+     */
+    public boolean hasAuth(String... permissions) { return server.hasAuth(this, permissions); }
 
 
     /**
@@ -262,7 +260,7 @@ public class HttpContext {
             response.contentTypeIfNotSet("application/javascript");
         }
 
-        int chunkedSize = server.chunkedSize((int) file.length(), File.class);
+        int chunkedSize = server.chunkedSize(this, (int) file.length(), File.class);
         if (chunkedSize < 0) { // 不分块, 文件整块传送
             byte[] content = new byte[(int) file.length()]; // 一次性读出来, 减少IO
             try (InputStream fis = new FileInputStream(file)) { fis.read(content); }
@@ -285,6 +283,7 @@ public class HttpContext {
                         aioStream.write(ByteBuffer.wrap(buf, 0, length)); //2. 写chunked: body
                         aioStream.write(ByteBuffer.wrap("\r\n".getBytes(server.getCharset()))); //2. 写chunked: end
                     }
+                    // Thread.sleep(200L); // 阿里云网速限制
                 } while (!end);
                 //3. 结束chunk
                 aioStream.write(ByteBuffer.wrap("0\r\n\r\n".getBytes(server.getCharset())));

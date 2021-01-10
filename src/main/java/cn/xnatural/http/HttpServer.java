@@ -445,11 +445,12 @@ public class HttpServer {
 
     /**
      * 分段传送, 每段大小
+     * @param hCtx HttpContext
      * @param size 总字节大小
      * @param type 类型
      * @return 每段大小. <0: 不分段
      */
-    protected int chunkedSize(int size, Class type) {
+    protected int chunkedSize(HttpContext hCtx, int size, Class type) {
         int chunkedSize = -1;
         if (File.class.equals(type)) {
             // 下载限速
@@ -466,6 +467,36 @@ public class HttpServer {
         }
         // TODO 其它类型暂时不分块
         return chunkedSize;
+    }
+
+
+    /**
+     * 权限验证
+     * @param permissions 权限名 验证用户是否有此权限
+     * @return true: 验证通过
+     */
+    protected boolean auth(HttpContext hCtx, String... permissions) {
+        if (permissions == null || permissions.length < 1) throw new IllegalArgumentException("Param permissions not empty");
+        if (!hasAuth(hCtx, permissions)) {
+            hCtx.response.status(403);
+            throw new AccessControlException("没有权限");
+        }
+        return true;
+    }
+
+
+    /**
+     * 是否存在权限
+     * @param permissions 权限名 验证用户是否有此权限
+     * @return true: 存在
+     */
+    protected boolean hasAuth(HttpContext hCtx, String... permissions) {
+        if (permissions == null || permissions.length < 1) return false;
+        Object ps = hCtx.getSessionAttr("permissions");
+        if (ps == null || !Arrays.stream(permissions).anyMatch(p -> ps.toString().contains(p))) {
+            return false;
+        }
+        return true;
     }
 
 
