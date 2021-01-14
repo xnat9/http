@@ -11,6 +11,26 @@
     <version>1.0.5</version>
 </dependency>
 ```
+### 打包编译(保留方法参数名, 非arg0/arg1...)
+maven
+```
+<plugin>
+    <groupId>org.apache.maven.plugins</groupId>
+    <artifactId>maven-compiler-plugin</artifactId>
+    <version>3.8.0</version>
+    <configuration>
+        <source>1.8</source>
+        <target>1.8</target>
+        <parameters>true</parameters>
+    </configuration>
+</plugin>
+```
+gradle
+```
+compileGroovy {
+    groovyOptions.parameters = true
+}
+```
 
 ### demo 
 http://xnatural.cn:9090/

@@ -21,9 +21,7 @@ public class WebSocket {
      * 发送消息
      * @param msg
      */
-    public void send(String msg) {
-        session.write(encode(msg));
-    }
+    public void send(String msg) { session.write(encode(msg)); }
 
 
     /**
@@ -32,7 +30,7 @@ public class WebSocket {
     public void close() {
         // session 为大内存对象, 主动回收
         HttpAioSession se = session; session = null; se.close();
-        listener.onClose(this);
+        if (listener != null) listener.onClose(this);
     }
 
 

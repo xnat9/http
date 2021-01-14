@@ -191,7 +191,7 @@ public class TestCtrl {
             File file = tmpFiles.remove(uploadId);
             filePiece.appendTo(file); filePiece.delete();
 
-            FileData fd = new FileData().setOriginName(originName).setFile(file).setInputStream(new FileInputStream(file));
+            FileData fd = new FileData().setOriginName(originName).setFile(file);
             // TODO 另存
             fd.transferTo(new File(System.getProperty("java.io.tmpdir")));
             return resp.attr("finalName", fd.getFinalName());

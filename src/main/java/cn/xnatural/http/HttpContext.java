@@ -186,7 +186,7 @@ public class HttpContext {
             throw new RuntimeException("Already submit response");
         }
         long spend = System.currentTimeMillis() - request.createTime.getTime();
-        if (spend > server.getInteger("warnTimeout", 5) * 1000) { // 请求超时警告
+        if (spend > server.getInteger("logWarnTimeout", 5000)) { // 请求超时警告单位ms
             log.warn("Request timeout '" + request.getId() + "', path: " + request.getPath() + " , spend: " + spend + "ms");
         }
         
