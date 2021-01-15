@@ -1,6 +1,5 @@
 package cn.xnatural.http;
 
-import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 
 /**
@@ -48,11 +47,7 @@ public class WebSocket {
      * @return
      */
     protected ByteBuffer encode(String msg) {
-        try {
-            return encode(msg.getBytes(session.server.getCharset()), (byte) 1);
-        } catch (UnsupportedEncodingException e) {
-            throw new RuntimeException(e);
-        }
+        return encode(msg.getBytes(session.server.getCharset()), (byte) 1);
     }
 
 

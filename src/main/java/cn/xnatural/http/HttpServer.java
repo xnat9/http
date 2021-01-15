@@ -10,6 +10,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.net.*;
 import java.nio.channels.*;
+import java.nio.charset.Charset;
 import java.security.AccessControlException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -27,7 +28,7 @@ import java.util.function.Supplier;
  * http 服务
  */
 public class HttpServer {
-    protected static final Logger log = LoggerFactory.getLogger(HttpServer.class);
+    protected static final Logger                                            log         = LoggerFactory.getLogger(HttpServer.class);
     /**
      * jdk aio 基类 {@link AsynchronousServerSocketChannel}
      */
@@ -35,35 +36,35 @@ public class HttpServer {
     /**
      * {@link AsynchronousServerSocketChannel} aio 连接器
      */
-    protected final CompletionHandler<AsynchronousSocketChannel, HttpServer> handler            = new AcceptHandler();
+    protected final CompletionHandler<AsynchronousSocketChannel, HttpServer> handler     = new AcceptHandler();
     /**
      * 配置: hp=[host]:port
      */
-    protected final       LazySupplier<String>                               _hpCfg             = new LazySupplier<>(() -> getStr("hp", ":7070"));
+    protected final       LazySupplier<String>                               _hpCfg      = new LazySupplier<>(() -> getStr("hp", ":7070"));
     /**
      * 端口
      */
-    protected final       LazySupplier<Integer>                              _port              = new LazySupplier<>(() -> Integer.valueOf(_hpCfg.get().split(":")[1]));
+    protected final       LazySupplier<Integer>                              _port       = new LazySupplier<>(() -> Integer.valueOf(_hpCfg.get().split(":")[1]));
     /**
      * 请求/响应 io 字节编码
      */
-    protected final LazySupplier<String>                                     _charset           = new LazySupplier<>(() -> getStr("charset", "utf-8"));
+    protected final LazySupplier<Charset>                                    _charset    = new LazySupplier<>(() -> Charset.forName(getStr("charset", "utf-8")));
     /**
      * mvc: m层执行链
      */
-    protected final Chain                                                    chain              = new Chain(this);
+    protected final Chain                                                    chain       = new Chain(this);
     /**
      * mvc: m层(控制器)
      */
-    protected final List                      ctrls              = new LinkedList<>();
+    protected final List                                                     ctrls       = new LinkedList<>();
     /**
      * 是否可用
      */
-    protected boolean                         enabled            = false;
+    protected boolean                                                        enabled     = false;
     /**
      * 当前连接
      */
-    protected  final Queue<HttpAioSession>    connections        = new ConcurrentLinkedQueue<>();
+    protected  final Queue<HttpAioSession>                                   connections = new ConcurrentLinkedQueue<>();
     /**
      * 请求计数器
      */
@@ -301,8 +302,8 @@ public class HttpServer {
                         hCtx.response.header("Upgrade", "websocket");
                         hCtx.response.header("Connection", "Upgrade");
 
-                        byte[] bs1 = hCtx.request.getHeader("Sec-WebSocket-Key").getBytes(_charset.get());
-                        byte[] bs2 = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes(_charset.get());
+                        byte[] bs1 = hCtx.request.getHeader("Sec-WebSocket-Key").getBytes(getCharset());
+                        byte[] bs2 = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11".getBytes(getCharset());
                         byte[] bs = new byte[bs1.length + bs2.length];
                         System.arraycopy(bs1, 0, bs, 0, bs1.length);
                         System.arraycopy(bs2, 0, bs, bs1.length, bs2.length);
@@ -594,7 +595,7 @@ public class HttpServer {
      * 字符集
      * @return 字符集
      */
-    public String getCharset() { return _charset.get(); }
+    public Charset getCharset() { return _charset.get(); }
 
 
     /**

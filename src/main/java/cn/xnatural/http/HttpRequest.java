@@ -90,8 +90,8 @@ public class HttpRequest {
                 String[] arr = s.split("=");
                 String name = null;
                 try {
-                    name = URLDecoder.decode(arr[0], session.server._charset.get());
-                    String value = arr.length > 1 ? URLDecoder.decode(arr[1], session.server._charset.get()) : null;
+                    name = URLDecoder.decode(arr[0], session.server.getCharset().toString());
+                    String value = arr.length > 1 ? URLDecoder.decode(arr[1], session.server.getCharset().toString()) : null;
                     if (data.containsKey(name)) { // 证明name 有多个值
                         Object v = data.get(name);
                         if (v instanceof List) ((List) v).add(value);
@@ -135,8 +135,8 @@ public class HttpRequest {
             for (String s : bodyStr.split("&")) {
                 String[] arr = s.split("=");
                 try {
-                    String name = URLDecoder.decode(arr[0], session.server._charset.get());
-                    String value = arr.length > 1 ? URLDecoder.decode(arr[1], session.server._charset.get()) : null;
+                    String name = URLDecoder.decode(arr[0], session.server.getCharset().toString());
+                    String value = arr.length > 1 ? URLDecoder.decode(arr[1], session.server.getCharset().toString()) : null;
                     if (data.containsKey(name)) { // 证明name 有多个值
                         Object v = data.get(name);
                         if (v instanceof List) {
