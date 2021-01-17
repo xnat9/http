@@ -8,7 +8,7 @@
 <dependency>
     <groupId>cn.xnatural.http</groupId>
     <artifactId>http</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 ### 打包编译(保留方法参数名, 非arg0/arg1...)
