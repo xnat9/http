@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 
 /**
@@ -493,8 +494,10 @@ public class HttpServer {
      */
     protected boolean hasAuth(HttpContext hCtx, String... permissions) {
         if (permissions == null || permissions.length < 1) return false;
-        Object ps = hCtx.getSessionAttr("permissions");
-        if (ps == null || !Arrays.stream(permissions).anyMatch(p -> ps.toString().contains(p))) {
+        Object ps = hCtx.getSessionAttr("permissions"); // 权限标识用,分割
+        if (ps == null) return false;
+        Set<String> pIds = Arrays.stream(ps.toString().split(",")).collect(Collectors.toSet());
+        if (!Arrays.stream(permissions).anyMatch(p -> pIds.contains(p))) {
             return false;
         }
         return true;
