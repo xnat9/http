@@ -494,13 +494,17 @@ public class HttpServer {
      */
     protected boolean hasAuth(HttpContext hCtx, String... permissions) {
         if (permissions == null || permissions.length < 1) return false;
-        Object ps = hCtx.getSessionAttr("permissions"); // 权限标识用,分割
-        if (ps == null) return false;
-        Set<String> pIds = Arrays.stream(ps.toString().split(",")).collect(Collectors.toSet());
-        if (!Arrays.stream(permissions).anyMatch(p -> pIds.contains(p))) {
-            return false;
+        Set<String> pIds = hCtx.getAttr("permissions", Set.class);
+        if (pIds == null) {
+            Object ps = hCtx.getSessionAttr("permissions"); // 权限标识用,分割
+            if (ps == null) return false;
+            pIds = Arrays.stream(ps.toString().split(",")).collect(Collectors.toSet());
+            hCtx.setAttr("permissions", pIds);
         }
-        return true;
+        for (String permission : permissions) {
+            if (pIds.contains(permission)) return true;
+        }
+        return false;
     }
 
 
@@ -524,6 +528,10 @@ public class HttpServer {
             }
         } catch (SocketException e) {
             log.error("", e);
+        }
+        Object[] arr = new Object[]{"dd"};
+        for (Object o : arr) {
+
         }
         return null;
     }
