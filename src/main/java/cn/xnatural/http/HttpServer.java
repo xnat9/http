@@ -529,10 +529,6 @@ public class HttpServer {
         } catch (SocketException e) {
             log.error("", e);
         }
-        Object[] arr = new Object[]{"dd"};
-        for (Object o : arr) {
-
-        }
         return null;
     }
 
