@@ -88,6 +88,7 @@ public class HttpRequest {
             Map<String, Object> data = new HashMap<>();
             for (String s : getQueryStr().split("&")) {
                 String[] arr = s.split("=");
+                if (arr.length < 1) continue;
                 String name = null;
                 try {
                     name = URLDecoder.decode(arr[0], session.server.getCharset().toString());
@@ -134,6 +135,7 @@ public class HttpRequest {
             Map<String, Object> data = new HashMap<>();
             for (String s : bodyStr.split("&")) {
                 String[] arr = s.split("=");
+                if (arr.length < 1) continue;
                 try {
                     String name = URLDecoder.decode(arr[0], session.server.getCharset().toString());
                     String value = arr.length > 1 ? URLDecoder.decode(arr[1], session.server.getCharset().toString()) : null;
