@@ -455,17 +455,20 @@ public class HttpServer {
     protected int chunkedSize(HttpContext hCtx, int size, Class type) {
         int chunkedSize = -1;
         if (File.class.equals(type)) {
-            // 下载限速
-            if (size > 1024 * 1024 * 50) { // 大于50M
-                chunkedSize = 1024 * 1024 * 4;
-            } else if (size > 1024 * 1024) { // 大于1M
+            if (size > 1024 * 1024) { // 大于1M
                 chunkedSize = 1024 * 1024;
-            } else if (size > 1024 * 500) { // 大于500K
-                chunkedSize = 1024 * 200;
+            } else if (size > 1024 * 80) { // 大于80K
+                chunkedSize = 1024 * 20;
             }
             // 小文件不需要分段传送. 限于带宽(带宽必须大于分块的最小值, 否则会导致前端接收数据不全)
+        } else if (byte[].class.equals(type)) {
+            if (size > 1024 * 1024) { // 大于1M
+                chunkedSize = 1024 * 1024;
+            } else if (size > 1024 * 80) { // 大于80K
+                chunkedSize = 1024 * 20;
+            }
         } else {
-            if (size > 1024 * 1024 * 4) throw new RuntimeException("body too large, > " + (1024 * 1024 * 4));
+            if (size > 1024 * 1024 * 10) throw new RuntimeException("body too large, > " + (1024 * 1024 * 10));
         }
         // TODO 其它类型暂时不分块
         return chunkedSize;

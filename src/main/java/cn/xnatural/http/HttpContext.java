@@ -3,6 +3,7 @@ package cn.xnatural.http;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.serializer.SerializerFeature;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
@@ -201,32 +202,22 @@ public class HttpContext {
                 // HttpResponseEncoder
                 if (body instanceof String) { //回写字符串
                     response.contentTypeIfNotSet("text/plain;charset=" + server.getCharset());
-                    byte[] bodyBs = ((String) body).getBytes(server.getCharset());
-                    response.contentLengthIfNotSet(bodyBs.length);
-                    aioStream.write(ByteBuffer.wrap(preRespBytes())); //写header
-                    aioStream.write(ByteBuffer.wrap(bodyBs)); // 写body
+                    renderBytes(((String) body).getBytes(server.getCharset()));
                 } else if (body instanceof ApiResp) {
                     response.contentTypeIfNotSet("application/json;charset=" + server.getCharset());
                     ((ApiResp) body).setMark((String) param("mark"));
                     ((ApiResp) body).setTraceNo(request.getId());
-                    byte[] bodyBs = JSON.toJSONString(body, SerializerFeature.WriteMapNullValue).getBytes(server.getCharset());
-                    response.contentLengthIfNotSet(bodyBs.length);
-                    aioStream.write(ByteBuffer.wrap(preRespBytes()));
-                    aioStream.write(ByteBuffer.wrap(bodyBs));
+                    renderBytes(JSON.toJSONString(body, SerializerFeature.WriteMapNullValue).getBytes(server.getCharset()));
+                } else if (body instanceof byte[]) {
+                    renderBytes((byte[]) body);
                 } else if (body instanceof File) {
                     renderFile((File) body);
                 } else if (response.getContentType() != null) {
                     String ct = response.getContentType();
                     if (ct.contains("application/json")) {
-                        byte[] bodyBs = JSON.toJSONString(body, SerializerFeature.WriteMapNullValue).getBytes(server.getCharset());
-                        response.contentLengthIfNotSet(bodyBs.length);
-                        aioStream.write(ByteBuffer.wrap(preRespBytes()));
-                        aioStream.write(ByteBuffer.wrap(bodyBs));
+                        renderBytes(JSON.toJSONString(body, SerializerFeature.WriteMapNullValue).getBytes(server.getCharset()));
                     } else if (ct.contains("text/plain")) {
-                        byte[] bodyBs = body.toString().getBytes(server.getCharset());
-                        response.contentLengthIfNotSet(bodyBs.length);
-                        aioStream.write(ByteBuffer.wrap(preRespBytes()));
-                        aioStream.write(ByteBuffer.wrap(bodyBs));
+                        renderBytes(body.toString().getBytes(server.getCharset()));
                     } else throw new Exception("Not support response Content-Type: " + ct);
                 } else throw new Exception("Not support response type: " + body.getClass().getName());
             }
@@ -234,6 +225,27 @@ public class HttpContext {
         } catch (Exception ex) {
             log.error("Http response error", ex);
             close();
+        }
+    }
+
+
+    /**
+     * 发送字节
+     * @param bodyBs body
+     * @throws Exception
+     */
+    protected void renderBytes(byte[] bodyBs) throws Exception {
+        int chunkedSize = server.chunkedSize(this, bodyBs.length, byte[].class);
+        if (chunkedSize < 0) { // 不分块, 文件整块传送
+            response.contentLengthIfNotSet(bodyBs.length);
+            aioStream.write(ByteBuffer.wrap(preRespBytes())); //1. 先写header
+            aioStream.write(ByteBuffer.wrap(bodyBs)); //2. 再写body
+        } else {
+            response.transferEncoding("chunked");
+            aioStream.write(ByteBuffer.wrap(preRespBytes())); // 1. 先写公共header
+            try (InputStream is = new ByteArrayInputStream(bodyBs)) { // 2. 再写body内容
+                chunked(chunkedSize, is);
+            }
         }
     }
 
@@ -273,29 +285,40 @@ public class HttpContext {
             response.contentTypeIfNotSet("application/octet-stream");
             aioStream.write(ByteBuffer.wrap(preRespBytes())); // 1. 先写公共header
             try (InputStream fis = new FileInputStream(file)) { // 2. 再写文件内容
-                byte[] buf = new byte[chunkedSize]; // 数据缓存buf
-                boolean end;
-                do {
-                    int length = fis.read(buf); // 一批一批的读, 减少IO
-                    end = length < chunkedSize; // 是否已结束(当读出来的数据少于chunkedSize)
-                    if (length > 0) {
-                        aioStream.write(ByteBuffer.wrap((Integer.toHexString(length) + "\r\n").getBytes(server.getCharset()))); //1. 写chunked: header
-                        aioStream.write(ByteBuffer.wrap(buf, 0, length)); //2. 写chunked: body
-                        aioStream.write(ByteBuffer.wrap("\r\n".getBytes(server.getCharset()))); //2. 写chunked: end
-                    }
-                    // Thread.sleep(500L); // 阿里云网速限制, chunkedSize = 1024 * 20
-                } while (!end);
-                //3. 结束chunk
-                aioStream.write(ByteBuffer.wrap("0\r\n\r\n".getBytes(server.getCharset())));
+                chunked(chunkedSize, fis);
             }
         }
     }
 
 
     /**
+     * 分批发送数据 chunked
+     * @param chunkedSize 分批大小
+     * @param is 输入数据流
+     * @throws Exception
+     */
+    protected void chunked(int chunkedSize, InputStream is) throws Exception {
+        byte[] buf = new byte[chunkedSize]; // 数据缓存buf
+        boolean end;
+        do {
+            int length = is.read(buf); // 一批一批的读, 减少IO
+            end = length < chunkedSize; // 是否已结束(当读出来的数据少于chunkedSize)
+            if (length > 0) {
+                aioStream.write(ByteBuffer.wrap((Integer.toHexString(length) + "\r\n").getBytes(server.getCharset()))); //1. 写chunked: header
+                aioStream.write(ByteBuffer.wrap(buf, 0, length)); //2. 写chunked: body
+                aioStream.write(ByteBuffer.wrap("\r\n".getBytes(server.getCharset()))); //2. 写chunked: end
+            }
+            // Thread.sleep(500L); // 阿里云网速限制, chunkedSize = 1024 * 20
+        } while (!end);
+        //3. 结束chunk
+        aioStream.write(ByteBuffer.wrap("0\r\n\r\n".getBytes(server.getCharset())));
+    }
+
+
+    /**
      * http 响应的前半部分
      * 包含: 起始行, 公共 header
-     * @return
+     * @return byte[]
      */
     protected byte[] preRespBytes() throws Exception {
         StringBuilder sb = new StringBuilder();

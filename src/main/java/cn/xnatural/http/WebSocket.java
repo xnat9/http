@@ -18,9 +18,10 @@ public class WebSocket {
 
     /**
      * 发送消息
-     * @param msg
+     * synchronized 避免 WritePendingException
+     * @param msg 消息
      */
-    public void send(String msg) { session.write(encode(msg)); }
+    public synchronized void send(String msg) { session.write(encode(msg)); }
 
 
     /**
