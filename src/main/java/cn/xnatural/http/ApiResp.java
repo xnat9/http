@@ -9,6 +9,8 @@ import java.util.Map;
  * @param <T>
  */
 public class ApiResp<T> implements Serializable {
+    public static String OK_CODE = "00";
+    public static String FAIL_CODE = "01";
     /**
      * 请求是否成功
      * 00: 正常
@@ -33,23 +35,23 @@ public class ApiResp<T> implements Serializable {
     private String mark;
 
 
-    public static <T> ApiResp<T> ok() { return new ApiResp().setCode("00"); }
+    public static <T> ApiResp<T> ok() { return new ApiResp().setCode(OK_CODE); }
 
 
-    public static <T> ApiResp ok(T data) { return new ApiResp().setCode("00").setData(data); }
+    public static <T> ApiResp ok(T data) { return new ApiResp().setCode(OK_CODE).setData(data); }
 
 
     public static <T> ApiResp of(String code, String desc) { return new ApiResp().setCode(code).setDesc(desc); }
 
 
-    public static <T> ApiResp fail(String errMsg) { return new ApiResp().setCode("01").setDesc(errMsg); }
+    public static <T> ApiResp fail(String errMsg) { return new ApiResp().setCode(FAIL_CODE).setDesc(errMsg); }
 
 
     /**
      * 一般用法 ApiResp.ok().attr("aaa", 111).attr("bbb", 222)
      *
-     * @param attrName
-     * @param attrValue
+     * @param attrName 属性名
+     * @param attrValue 属性值
      * @return
      */
     public ApiResp<Map<String, Object>> attr(String attrName, Object attrValue) {
@@ -79,45 +81,35 @@ public class ApiResp<T> implements Serializable {
     }
 
 
-    public String getCode() {
-        return code;
-    }
+    public String getCode() { return code; }
 
     public ApiResp<T> setCode(String code) {
         this.code = code;
         return this;
     }
 
-    public T getData() {
-        return data;
-    }
+    public T getData() { return data; }
 
     public ApiResp<T> setData(T data) {
         this.data = data;
         return this;
     }
 
-    public String getDesc() {
-        return desc;
-    }
+    public String getDesc() { return desc; }
 
     public ApiResp<T> setDesc(String desc) {
         this.desc = desc;
         return this;
     }
 
-    public String getTraceNo() {
-        return traceNo;
-    }
+    public String getTraceNo() { return traceNo; }
 
     public ApiResp<T> setTraceNo(String traceNo) {
         this.traceNo = traceNo;
         return this;
     }
 
-    public String getMark() {
-        return mark;
-    }
+    public String getMark() { return mark; }
 
     public ApiResp<T> setMark(String mark) {
         this.mark = mark;

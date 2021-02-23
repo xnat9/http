@@ -32,7 +32,6 @@
         </dependency>
     </dependencies>
 
-
     <name>http</name>
     <description>轻量级http 服务, 基于jdk aio</description>
 

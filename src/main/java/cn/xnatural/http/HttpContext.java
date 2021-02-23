@@ -166,7 +166,7 @@ public class HttpContext {
 
     /**
      * 是否存在权限
-     * @param permissions
+     * @param permissions 多个权限标识
      * @return true: 存在
      */
     public boolean hasAuth(String... permissions) { return server.hasAuth(this, permissions); }
@@ -343,7 +343,7 @@ public class HttpContext {
 
     /**
      * 所有参数: 路径参数, query参数, 表单, json
-     * @return
+     * @return map
      */
     public Map<String, Object> params() {
         Map<String, Object> params = new HashMap<>();
@@ -357,8 +357,8 @@ public class HttpContext {
 
     /**
      * {@link #param(String, Class)}
-     * @param pName
-     * @return
+     * @param pName 参数名
+     * @return 参数值
      */
     public Object param(String pName) { return param(pName, null); }
 

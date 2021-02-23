@@ -151,7 +151,7 @@ public class HttpServer {
      */
     public void stop() {
         enabled = false;
-        try { if (connections.size() > 5) {Thread.sleep(1000L);} ssc.close(); } catch (Exception e) {/** ignore **/}
+        try { if (connections.size() > 2) {Thread.sleep(1000L);} ssc.close(); } catch (Exception e) {/** ignore **/}
         exec.shutdown();
     }
 
@@ -181,7 +181,7 @@ public class HttpServer {
                 hCtx.render(ApiResp.fail("server busy, please wait..."));
             }
         } catch (Exception ex) {
-            log.error("Handle request error", ex);
+            log.error("Handle request error. " + request.getId(), ex);
             if (hCtx != null) {
                 hCtx.response.status(500); hCtx.render(); hCtx.close();
             }
@@ -484,7 +484,7 @@ public class HttpServer {
         if (permissions == null || permissions.length < 1) throw new IllegalArgumentException("Param permissions not empty");
         if (!hasAuth(hCtx, permissions)) {
             hCtx.response.status(403);
-            throw new AccessControlException("没有权限");
+            throw new AccessControlException("Permission denied");
         }
         return true;
     }
@@ -497,7 +497,7 @@ public class HttpServer {
      */
     protected boolean hasAuth(HttpContext hCtx, String... permissions) {
         if (permissions == null || permissions.length < 1) return false;
-        Set<String> pIds = hCtx.getAttr("permissions", Set.class);
+        Set<String> pIds = hCtx.getAttr("permissions", Set.class); // 请求变量, 缓存解析好的权限标识
         if (pIds == null) {
             Object ps = hCtx.getSessionAttr("permissions"); // 权限标识用,分割
             if (ps == null) return false;
@@ -694,7 +694,10 @@ public class HttpServer {
      * MM-dd HH -> 个数
      */
     protected class Counter {
-        protected final Map<String, LongAdder> hourCount = new ConcurrentHashMap<>(3);
+        // 最多保存几个小时的计数
+        protected Integer maxKeep = 1;
+        // 保存每小时的计数
+        protected final Map<String, LongAdder> hourCount = new ConcurrentHashMap<>(maxKeep + 1);
         public void increment() {
             SimpleDateFormat sdf = new SimpleDateFormat("MM-dd HH");
             boolean isNew = false;
@@ -703,20 +706,22 @@ public class HttpServer {
             if (count == null) {
                 synchronized (hourCount) {
                     count = hourCount.get(hStr);
-                    if (count == null) {
+                    if (count == null) { // 创建新计数
                         count = new LongAdder(); hourCount.put(hStr, count);
                         isNew = true;
                     }
                 }
             }
             count.increment();
-            if (isNew) {
+            // 当有新的计数被创建时, 则删除上次创建的计数, 删除直到只剩一个(有可能一个小时内没有计数)
+            for (int i = 1; isNew && hourCount.size() > maxKeep; i++) {
                 final Calendar cal = Calendar.getInstance();
-                cal.setTime(new Date());
-                cal.add(Calendar.HOUR_OF_DAY, -1);
+                cal.add(Calendar.HOUR_OF_DAY, -i);
                 String lastHour = sdf.format(cal.getTime());
                 LongAdder c = hourCount.remove(lastHour);
-                if (c != null) log.info("{} total receive http request: {}", lastHour, c);
+                if (c != null) {
+                    log.info("{} total receive http request: {}", lastHour, c);
+                }
             }
         }
     }

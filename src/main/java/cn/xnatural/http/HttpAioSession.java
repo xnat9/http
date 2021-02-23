@@ -108,7 +108,7 @@ public class HttpAioSession {
             try {
                 ws.decoder.decode(buf);
             } catch (Exception ex) {
-                log.error("Web socket decode error", ex);
+                log.error("Web socket decode error. from: " + getRemoteAddress(), ex);
                 close();
             }
         } else { // 正常 http 请求
@@ -116,7 +116,7 @@ public class HttpAioSession {
             try {
                 request.decoder.decode(buf);
             } catch (Exception ex) {
-                log.error("Http decode error", ex);
+                log.error("Http decode error. from: " + getRemoteAddress(), ex);
                 close(); return;
             }
             if (request.decoder.complete) {

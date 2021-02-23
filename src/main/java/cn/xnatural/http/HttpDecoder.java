@@ -107,7 +107,7 @@ public class HttpDecoder {
         String firstLine = readLine(buf);
         if (firstLine == null) { // 没有一行数据
             if (decodeCount > 1) {
-                throw new Exception("HTTP start line too manny");
+                throw new Exception("HTTP start line too large");
             }
             return false;
         }
@@ -129,9 +129,20 @@ public class HttpDecoder {
      * @param buf 字节流
      */
     protected boolean header(ByteBuffer buf) throws Exception {
+        Long headerSizeLimit = request.session.server.getLong("headerSizeLimit", 1024 * 1024 * 2L);
         do {
+            if (headerSize > headerSizeLimit) {
+                throw new Exception("HTTP header too large");
+            }
+            int p = buf.position();
             String headerLine = readLine(buf);
-            if (headerLine == null) break;
+            if (headerLine == null) {
+                if (buf.remaining() == buf.limit()) { // buf数据是满的,但没读出来
+                    throw new Exception("HTTP header item too large");
+                }
+                break;
+            }
+            headerSize += buf.position() - p;
             if ("\r".equals(headerLine)) return true; // 请求头结束
             int index = headerLine.indexOf(":");
             request.headers.put(headerLine.substring(0, index).toLowerCase(), headerLine.substring(index + 1).trim());
@@ -154,6 +165,10 @@ public class HttpDecoder {
             String lengthStr = request.getHeader("content-length");
             if (lengthStr != null) {
                 int length = Integer.valueOf(lengthStr);
+                Integer textBodyLengthLimit = request.session.server.getInteger("textBodyLengthLimit", 1024 * 1024);
+                if (length > textBodyLengthLimit) {
+                    throw new Exception("text body length limit to: " + textBodyLengthLimit);
+                }
                 if (buf.remaining() < length) return false; // 数据没接收完
                 byte[] bs = new byte[length];
                 buf.get(bs);
@@ -220,7 +235,12 @@ public class HttpDecoder {
         // 读参数名: 从header Content-Disposition 中读取参数名 和文件名
         do { // 每个part的header
             String line = readLine(buf);
-            if (null == line) return false;
+            if (null == line) {
+                if (buf.remaining() == buf.limit()) { // buf数据是满的,但没读出来
+                    throw new Exception("HTTP multipart header item too large");
+                }
+                return false;
+            }
             else if ("\r".equals(line)) { curPart.headerComplete = true; return true; }
             else if (line.toLowerCase().contains("content-disposition")) { // part为文件
                 for (String entry : line.split(":")[1].split(";")) {
@@ -292,7 +312,12 @@ public class HttpDecoder {
             }
         } else { // 文本 Part
             String line = readLine(buf);
-            if (line == null) return false;
+            if (line == null) {
+                if (buf.remaining() == buf.limit()) { // buf数据是满的,但没读出来
+                    throw new Exception("HTTP multipart value item too large");
+                }
+                return false;
+            }
             curPart.value = line.replace("\r", "");
             curPart.valueComplete = true;
             if (multiForm.containsKey(curPart.name)) {
