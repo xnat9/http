@@ -17,19 +17,19 @@ import static cn.xnatural.http.HttpServer.log;
  */
 public class HttpAioSession {
     protected final        AsynchronousSocketChannel channel;
-    protected final                ReadHandler                  readHandler = new ReadHandler();
-    public HttpServer                server;
+    protected final                ReadHandler       readHandler = new ReadHandler();
+    public HttpServer                                server;
     // 上次读写时间
     protected              Long                      lastUsed    = System.currentTimeMillis();
-    protected final AtomicBoolean closed      = new AtomicBoolean(false);
+    protected final AtomicBoolean                    closed      = new AtomicBoolean(false);
     // 每次接收消息的内存空间(文件上传大小限制)
-    protected final LazySupplier<ByteBuffer> _buf = new LazySupplier<>(() -> ByteBuffer.allocate(server.getInteger("receiveMsgBufferSize", 1024 * 1024)));
+    protected final LazySupplier<ByteBuffer>         _buf        = new LazySupplier<>(() -> ByteBuffer.allocate(server.getInteger("receiveMsgBufferSize", 1024 * 1024)));
     // 不为空代表是WebSocket
-    protected WebSocket ws;
+    protected WebSocket                              ws;
     // 当前解析的请求
-    protected HttpRequest request;
+    protected HttpRequest                            request;
     // 临时文件
-    protected final List<File> tmpFiles = new LinkedList<>();
+    protected final List<File>                       tmpFiles    = new LinkedList<>();
 
 
     HttpAioSession(AsynchronousSocketChannel channel, HttpServer server) {

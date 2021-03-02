@@ -308,7 +308,7 @@ public class HttpContext {
                 aioStream.write(ByteBuffer.wrap(buf, 0, length)); //2. 写chunked: body
                 aioStream.write(ByteBuffer.wrap("\r\n".getBytes(server.getCharset()))); //2. 写chunked: end
             }
-            // Thread.sleep(500L); // 阿里云网速限制, chunkedSize = 1024 * 20
+            // Thread.sleep(450L); // 阿里云网速限制, chunkedSize = 1024 * 20
         } while (!end);
         //3. 结束chunk
         aioStream.write(ByteBuffer.wrap("0\r\n\r\n".getBytes(server.getCharset())));

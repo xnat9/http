@@ -45,35 +45,35 @@ public class HttpServer {
     /**
      * 端口
      */
-    protected final       LazySupplier<Integer>                              _port       = new LazySupplier<>(() -> Integer.valueOf(_hpCfg.get().split(":")[1]));
+    protected final       LazySupplier<Integer> _port            = new LazySupplier<>(() -> Integer.valueOf(_hpCfg.get().split(":")[1]));
     /**
      * 请求/响应 io 字节编码
      */
-    protected final LazySupplier<Charset>                                    _charset    = new LazySupplier<>(() -> Charset.forName(getStr("charset", "utf-8")));
+    protected final LazySupplier<Charset>       _charset         = new LazySupplier<>(() -> Charset.forName(getStr("charset", "utf-8")));
     /**
      * mvc: m层执行链
      */
-    protected final Chain                                                    chain       = new Chain(this);
+    protected final Chain                       chain            = new Chain(this);
     /**
      * mvc: m层(控制器)
      */
-    protected final List                                                     ctrls       = new LinkedList<>();
+    protected final List                        ctrls            = new LinkedList<>();
     /**
      * 是否可用
      */
-    protected boolean                                                        enabled     = false;
+    public boolean                              enabled          = false;
     /**
      * 当前连接
      */
-    protected  final Queue<HttpAioSession>                                   connections = new ConcurrentLinkedQueue<>();
+    protected  final Queue<HttpAioSession>      connections      = new ConcurrentLinkedQueue<>();
     /**
      * 请求计数器
      */
-    protected final Counter                   counter            = new Counter();
+    protected final Counter                     counter          = new Counter();
     /**
      * 忽略打印的请求路径后缀
      */
-    protected final LazySupplier<Set<String>> _ignoreLogSuffix   = new LazySupplier<>(() -> {
+    protected final LazySupplier<Set<String>>   _ignoreLogSuffix = new LazySupplier<>(() -> {
         final Set<String> set = new HashSet<>(Arrays.asList(".js", ".css", ".html", ".vue", ".png", ".ttf", ".woff", ".woff2", ".ico", ".map"));
         for (String suffix : getStr("ignoreLogUrlSuffix", "").split(",")) {
             if (suffix != null && !suffix.trim().isEmpty()) set.add(suffix.trim());
@@ -179,6 +179,7 @@ public class HttpServer {
             } else {
                 hCtx.response.status(503);
                 hCtx.render(ApiResp.fail("server busy, please wait..."));
+                hCtx.close();
             }
         } catch (Exception ex) {
             log.error("Handle request error. " + request.getId(), ex);
