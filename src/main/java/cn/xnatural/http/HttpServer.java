@@ -691,6 +691,16 @@ public class HttpServer {
 
 
     /**
+     * 统计每小时 请求个数
+     * @param hour 小时 MM-dd HH
+     * @param count 请求个数
+     */
+    protected void countByHour(String hour, LongAdder count) {
+        log.info("{} total receive http request: {}", hour, count);
+    }
+
+
+    /**
      * 统计每小时的处理 请求 个数
      * MM-dd HH -> 个数
      */
@@ -721,7 +731,7 @@ public class HttpServer {
                 String lastHour = sdf.format(cal.getTime());
                 LongAdder c = hourCount.remove(lastHour);
                 if (c != null) {
-                    log.info("{} total receive http request: {}", lastHour, c);
+                    countByHour(lastHour, c);
                 }
             }
         }

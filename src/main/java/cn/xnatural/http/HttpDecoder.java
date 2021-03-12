@@ -53,11 +53,11 @@ public class HttpDecoder {
     /**
      * multipart/form-data 表单数据预存.包含文件
      */
-    protected Map<String, Object> multiForm;
+    protected Map<String, Object>   multiForm;
     /**
      * 请求体包含多个 Part时: part之间的分割符
      */
-    protected LazySupplier<String> boundary = new LazySupplier<>(() -> {
+    protected LazySupplier<String>  boundary             = new LazySupplier<>(() -> {
         if (request == null) return null;
         String ct = request.getContentType();
         if (ct == null) return null;
@@ -66,6 +66,14 @@ public class HttpDecoder {
         }
         return null;
     });
+    /**
+     * 文本body长度限制
+     */
+    protected LazySupplier<Integer> _textBodyLengthLimit = new LazySupplier<>(() -> request.session.server.getInteger("textBodyLengthLimit", 1024 * 1024));
+    /**
+     * multipart/form-data, 单个值的大小限制, 单位: bit
+     */
+    protected LazySupplier<Integer> _multiValueMaxSize   = new LazySupplier<>(() -> request.session.server.getInteger("multiValueMaxSize", 1024 * 1024));
 
 
     HttpDecoder(HttpRequest request) { this.request = request; }
@@ -162,12 +170,11 @@ public class HttpDecoder {
         ct = ct.toLowerCase();
         int position = buf.position();
         if (ct.contains("application/json") || ct.contains("application/x-www-form-urlencoded") || ct.contains("text/plain")) {
-            String lengthStr = request.getHeader("content-length");
+            String lengthStr = request.getHeader("Content-Length");
             if (lengthStr != null) {
                 int length = Integer.valueOf(lengthStr);
-                Integer textBodyLengthLimit = request.session.server.getInteger("textBodyLengthLimit", 1024 * 1024);
-                if (length > textBodyLengthLimit) {
-                    throw new Exception("text body length limit to: " + textBodyLengthLimit);
+                if (length > _textBodyLengthLimit.get()) {
+                    throw new Exception("text body length limit to: " + _textBodyLengthLimit.get());
                 }
                 if (buf.remaining() < length) return false; // 数据没接收完
                 byte[] bs = new byte[length];
