@@ -4,7 +4,7 @@
 [文档](https://gitee.com/xnat/http/wikis)
 
 ### 安装教程
-```
+```xml
 <dependency>
     <groupId>cn.xnatural.http</groupId>
     <artifactId>http</artifactId>
@@ -13,7 +13,7 @@
 ```
 ### 打包编译(保留方法参数名, 非arg0/arg1...)
 maven
-```
+```xml
 <plugin>
     <groupId>org.apache.maven.plugins</groupId>
     <artifactId>maven-compiler-plugin</artifactId>
@@ -39,7 +39,7 @@ test:test
 
 ### [快速开始](https://gitee.com/xnat/http/wikis/%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B?sort_id=3198051)
 #### 手动执行链
-```
+```java
 HttpServer server = new HttpServer().buildChain((chain -> {
     // 手动自定义添加接口
     chain.get("get", hCtx -> {
@@ -59,7 +59,7 @@ HttpServer server = new HttpServer().buildChain((chain -> {
 
 ```
 #### [控制层类](https://gitee.com/xnat/http/wikis/%E6%8E%A7%E5%88%B6%E5%B1%82%E7%B1%BB@Ctrl?sort_id=3198014)
-```
+```java
 HttpServer server = new HttpServer().ctrls( // 添加Controller层类
     MainCtrl.class, TestCtrl.class
 ).start();
