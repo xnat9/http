@@ -85,7 +85,7 @@ public class HttpRequest {
 
     private final LazySupplier<Map<String, Object>> _queryParams = new LazySupplier<>(() -> {
         if (getQueryStr() != null) {
-            Map<String, Object> data = new HashMap<>();
+            Map<String, Object> data = new LinkedHashMap<>();
             for (String s : getQueryStr().split("&")) {
                 String[] arr = s.split("=");
                 if (arr.length < 1) continue;
@@ -132,7 +132,7 @@ public class HttpRequest {
     private final LazySupplier<Map<String, Object>> _formParams = new LazySupplier<>(() -> {
         String ct = getContentType();
         if (bodyStr != null && !bodyStr.isEmpty() && ct != null && ct.contains("application/x-www-form-urlencoded")) {
-            Map<String, Object> data = new HashMap<>();
+            Map<String, Object> data = new LinkedHashMap<>();
             for (String s : bodyStr.split("&")) {
                 String[] arr = s.split("=");
                 if (arr.length < 1) continue;
@@ -172,7 +172,7 @@ public class HttpRequest {
         String ct = getContentType();
         if (bodyStr != null && !bodyStr.isEmpty() && ct != null && ct.contains("application/json")) {
             try {
-                return Collections.unmodifiableMap(JSON.parseObject(bodyStr, Feature.AllowComment, Feature.AllowSingleQuotes));
+                return Collections.unmodifiableMap(JSON.parseObject(bodyStr, Feature.AllowComment, Feature.AllowSingleQuotes, Feature.OrderedField));
             } catch (JSONException ex) {
                 log.error("Request body is not a JSON: " + bodyStr);
             }

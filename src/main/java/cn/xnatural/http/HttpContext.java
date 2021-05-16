@@ -32,7 +32,7 @@ public class HttpContext {
     /**
      * 路径变量值映射
      */
-    protected final           Map<String, Object> pathToken = new HashMap<>(7);
+    protected final           Map<String, Object> pathToken = new LinkedHashMap<>(7);
     /**
      * 路径块, 用于路径匹配 /test/p1/p2 -> test,p1,p2
      */
@@ -342,11 +342,11 @@ public class HttpContext {
 
 
     /**
-     * 所有参数: 路径参数, query参数, 表单, json
+     * 所有参数(有序): 路径参数, query参数, 表单, json
      * @return map
      */
     public Map<String, Object> params() {
-        Map<String, Object> params = new HashMap<>();
+        Map<String, Object> params = new LinkedHashMap<>();
         params.putAll(request.getJsonParams());
         params.putAll(request.getFormParams());
         params.putAll(request.getQueryParams());
