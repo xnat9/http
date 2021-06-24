@@ -18,7 +18,7 @@ abstract class PathHandler implements Handler {
 
 
     // 路径块. /test/pp -> ['test', 'pp']
-    private LazySupplier<String[]> _pieces = new LazySupplier<>(() -> {
+    private Lazies<String[]> _pieces = new Lazies<>(() -> {
         String p = path();
         if (p == null) throw new IllegalArgumentException("PathHandler path must not be null");
         if ("/".equals(p)) return new String[]{"/"};
@@ -28,7 +28,7 @@ abstract class PathHandler implements Handler {
 
 
     // 匹配的先后顺序, 越大越先匹配
-    private LazySupplier<Double> _order = new LazySupplier<>(() -> {
+    private Lazies<Double> _order = new Lazies<>(() -> {
         if (pieces() == null) return Double.MAX_VALUE;
         double i = pieces().length;
         for (String piece : pieces()) {

@@ -34,7 +34,7 @@ public class HttpRequest {
     HttpRequest(HttpAioSession session) { this.session = session; }
 
 
-    private final LazySupplier<String> _id = new LazySupplier<>(() -> {
+    private final Lazies<String> _id = new Lazies<>(() -> {
         String id = getHeader("X-Request-ID");
         if (id != null && !id.isEmpty()) return id;
         return UUID.randomUUID().toString().replace("-", "");
@@ -46,7 +46,7 @@ public class HttpRequest {
     public String getId() { return _id.get(); }
 
 
-    private final LazySupplier<Map<String, String>> _cookies = new LazySupplier<>(() -> {
+    private final Lazies<Map<String, String>> _cookies = new Lazies<>(() -> {
         String cookieStr = getHeader("Cookie");
         if (cookieStr == null) return null;
         else {
@@ -72,7 +72,7 @@ public class HttpRequest {
      * 查询字符串
      * @return
      */
-    private final LazySupplier<String> _queryStr = new LazySupplier<>(() -> {
+    private final Lazies<String> _queryStr = new Lazies<>(() -> {
         int i = rowUrl.indexOf("?");
         return i == -1 ? null : rowUrl.substring(i + 1);
     });
@@ -83,7 +83,7 @@ public class HttpRequest {
     public String getQueryStr() { return _queryStr.get(); }
 
 
-    private final LazySupplier<Map<String, Object>> _queryParams = new LazySupplier<>(() -> {
+    private final Lazies<Map<String, Object>> _queryParams = new Lazies<>(() -> {
         if (getQueryStr() != null) {
             Map<String, Object> data = new LinkedHashMap<>();
             for (String s : getQueryStr().split("&")) {
@@ -118,7 +118,7 @@ public class HttpRequest {
 
 
     // 懒计算(只计算一次)例子
-    private final LazySupplier<String> _path = new LazySupplier<>(() -> {
+    private final Lazies<String> _path = new Lazies<>(() -> {
         int i = rowUrl.indexOf("?");
         return i == -1 ? rowUrl : rowUrl.substring(0, i);
     });
@@ -129,7 +129,7 @@ public class HttpRequest {
     public String getPath() { return _path.get(); }
 
 
-    private final LazySupplier<Map<String, Object>> _formParams = new LazySupplier<>(() -> {
+    private final Lazies<Map<String, Object>> _formParams = new Lazies<>(() -> {
         String ct = getContentType();
         if (bodyStr != null && !bodyStr.isEmpty() && ct != null && ct.contains("application/x-www-form-urlencoded")) {
             Map<String, Object> data = new LinkedHashMap<>();
@@ -168,7 +168,7 @@ public class HttpRequest {
     public Map<String, Object> getFormParams() { return _formParams.get(); }
 
 
-    private final LazySupplier<Map<String, Object>> _jsonParams = new LazySupplier<>(() -> {
+    private final Lazies<Map<String, Object>> _jsonParams = new Lazies<>(() -> {
         String ct = getContentType();
         if (bodyStr != null && !bodyStr.isEmpty() && ct != null && ct.contains("application/json")) {
             try {

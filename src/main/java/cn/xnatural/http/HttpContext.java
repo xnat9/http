@@ -48,7 +48,7 @@ public class HttpContext {
     /**
      * session 数据操作委托
      */
-    protected final LazySupplier<Map<String, Object>> sessionSupplier;
+    protected final Lazies<Map<String, Object>> sessionSupplier;
     /**
      * 执行的 {@link Handler}
      */
@@ -66,7 +66,7 @@ public class HttpContext {
         this.request = request;
         this.aioStream = request.session;
         this.server = server;
-        this.sessionSupplier = new LazySupplier<>(() -> sessionDelegate.apply(this));
+        this.sessionSupplier = new Lazies<>(() -> sessionDelegate.apply(this));
 
         if ("/".equals(request.getPath())) this.pieces.add("/");
         else {

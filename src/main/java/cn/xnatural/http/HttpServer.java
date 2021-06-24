@@ -41,15 +41,15 @@ public class HttpServer {
     /**
      * 配置: hp=[host]:port
      */
-    protected final       LazySupplier<String>                               _hpCfg      = new LazySupplier<>(() -> getStr("hp", ":7070"));
+    protected final Lazies<String> _hpCfg      = new Lazies<>(() -> getStr("hp", ":7070"));
     /**
      * 端口
      */
-    protected final       LazySupplier<Integer> _port            = new LazySupplier<>(() -> Integer.valueOf(_hpCfg.get().split(":")[1]));
+    protected final Lazies<Integer> _port            = new Lazies<>(() -> Integer.valueOf(_hpCfg.get().split(":")[1]));
     /**
      * 请求/响应 io 字节编码
      */
-    protected final LazySupplier<Charset>       _charset         = new LazySupplier<>(() -> Charset.forName(getStr("charset", "utf-8")));
+    protected final Lazies<Charset> _charset         = new Lazies<>(() -> Charset.forName(getStr("charset", "utf-8")));
     /**
      * mvc: m层执行链
      */
@@ -73,7 +73,7 @@ public class HttpServer {
     /**
      * 忽略打印的请求路径后缀
      */
-    protected final LazySupplier<Set<String>>   _ignoreLogSuffix = new LazySupplier<>(() -> {
+    protected final Lazies<Set<String>> _ignoreLogSuffix = new Lazies<>(() -> {
         final Set<String> set = new HashSet<>(Arrays.asList(".js", ".css", ".html", ".vue", ".png", ".ttf", ".woff", ".woff2", ".ico", ".map"));
         for (String suffix : getStr("ignoreLogUrlSuffix", "").split(",")) {
             if (suffix != null && !suffix.trim().isEmpty()) set.add(suffix.trim());

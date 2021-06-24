@@ -6,13 +6,13 @@ import java.util.function.Supplier;
  * Groovy @Lazy 实现
  * @param <T>
  */
-class LazySupplier<T> implements Supplier<T> {
+class Lazies<T> implements Supplier<T> {
     private final Supplier<T> supplier;
     // 只执行一次
     private boolean       once = false;
     private T result;
 
-    public LazySupplier(Supplier<T> supplier) {
+    public Lazies(Supplier<T> supplier) {
         if (supplier == null) throw new NullPointerException("supplier is null");
         this.supplier = supplier;
     }
@@ -33,10 +33,13 @@ class LazySupplier<T> implements Supplier<T> {
             synchronized (this) {
                 if (!once) {
                     result = supplier.get();
-                    once = true;
+                    if (result != null) once = true; //为空,则重新取
                 }
             }
         }
         return result;
     }
+
+    @Override
+    public String toString() { return result == null ? null : result.toString(); }
 }

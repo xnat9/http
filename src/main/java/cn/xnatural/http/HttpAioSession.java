@@ -23,7 +23,7 @@ public class HttpAioSession {
     protected              Long                      lastUsed    = System.currentTimeMillis();
     protected final AtomicBoolean                    closed      = new AtomicBoolean(false);
     // 每次接收消息的内存空间(文件上传大小限制)
-    protected final LazySupplier<ByteBuffer>         _buf        = new LazySupplier<>(() -> ByteBuffer.allocate(server.getInteger("receiveMsgBufferSize", 1024 * 1024)));
+    protected final Lazies<ByteBuffer> _buf        = new Lazies<>(() -> ByteBuffer.allocate(server.getInteger("receiveMsgBufferSize", 1024 * 1024)));
     // 不为空代表是WebSocket
     protected WebSocket                              ws;
     // 当前解析的请求
@@ -112,7 +112,7 @@ public class HttpAioSession {
                 close();
             }
         } else { // 正常 http 请求
-            if (request == null) {request = new HttpRequest(this); }
+            if (request == null) { request = new HttpRequest(this); }
             try {
                 request.decoder.decode(buf);
             } catch (Exception ex) {
