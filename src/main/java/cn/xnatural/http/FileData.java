@@ -157,7 +157,12 @@ public class FileData {
         return this;
     }
 
-    public Long getSize() { return size; }
+    public Long getSize() {
+        if (inputStream != null && inputStream instanceof ConvergeInputStream) {
+            return ((ConvergeInputStream) inputStream).getReadCount();
+        }
+        return size;
+    }
 
     public FileData setSize(Long size) {
         this.size = size;

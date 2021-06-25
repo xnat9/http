@@ -88,6 +88,10 @@ public class HttpServer {
      * 线程池执行器
      */
     protected final ExecutorService exec;
+    /**
+     * 分片上传流映射
+     */
+    protected final Map<String, ConvergeInputStream> pieceUploadMap = new ConcurrentHashMap<>();
 
 
     /**
@@ -175,6 +179,8 @@ public class HttpServer {
                     hCtx.render(ApiResp.fail("server busy, please wait..."));
                     hCtx.close(); return;
                 }
+                // 判断是否是分片上传请求
+                if (pieceUpload(hCtx)) return;
                 chain.handle(hCtx);
             } else {
                 hCtx.response.status(503);
@@ -187,6 +193,77 @@ public class HttpServer {
                 hCtx.response.status(500); hCtx.render(); hCtx.close();
             }
         }
+    }
+
+    /**
+     * 文件分片上传实现:
+     * x-pieceupload-id: 上传id(用于分辨是否是同一个文件上传)
+     * x-pieceupload-end: true/false: 是否结束
+     * x-pieceupload-filename: xxx.txt
+     * x-pieceupload-progress: get: 获取进度
+     * @param hCtx HttpContext
+     * @return true: 当前请求是分片文件上传请求; false 普通请求
+     */
+    protected boolean pieceUpload(HttpContext hCtx) throws Exception {
+        String uploadId = hCtx.request.getHeader("x-pieceupload-id");
+        if (uploadId == null) return false;
+        log.info("Upload piece: " + uploadId);
+        ConvergeInputStream stream = pieceUploadMap.get(uploadId);
+        String progress = hCtx.request.getHeader("x-pieceupload-progress");
+        // 1. 判断当前请求是否只拿分片上传的后端进度
+        if ("get".equalsIgnoreCase(progress)) {
+            hCtx.render(
+                    ApiResp.ok().attr("uploadId", uploadId)
+                            .attr("left", stream == null ? 0 : stream.left())
+                            .attr("isEnd", stream == null || stream.isEnd())
+            );
+            return true;
+        }
+
+        // 判断是否是最后一个分片
+        String endStr = hCtx.request.getHeader("x-pieceupload-end");
+        Boolean end = endStr != null && Boolean.valueOf(endStr);
+
+        List<FileData> fds = hCtx.request.getFormParams().values().stream()
+                .filter(o -> o instanceof FileData).map(o -> (FileData) o)
+                .collect(Collectors.toList());
+        if (fds.isEmpty()) {
+            hCtx.render(ApiResp.fail("First upload piece is empty"));
+            return true;
+        }
+        // 2. 第一个分片上传
+        if (stream == null) {
+            stream = new ConvergeInputStream();
+            pieceUploadMap.put(uploadId, stream);
+            log.info("First upload piece: " + uploadId);
+
+            stream.addStream(fds.get(0).getInputStream());
+            fds.get(0).setInputStream(stream);
+            fds.get(0).setOriginName(hCtx.request.getHeader("x-pieceupload-filename"));
+
+            for (int i = 1; i < fds.size(); i++) { stream.addStream(fds.get(i).getInputStream()); }
+
+            if (end) stream.enEnd();
+            // 清理时间长的, 已结束的流
+            exec.execute(() -> {
+                long expire = Duration.ofMinutes(getLong("pieceUpload.expire", 180L)).toMillis();
+                pieceUploadMap.entrySet().removeIf(e -> e.getValue().isEnd() || System.currentTimeMillis() - e.getValue().createTime > expire);
+            });
+            hCtx.render(ApiResp.ok().attr("uploadId", uploadId).attr("fileId", fds.get(0).getFinalName()).attr("left", stream.left()).attr("isEnd", stream.isEnd()));
+            log.info("First upload piece end: " + uploadId);
+            chain.handle(new HttpContext(hCtx.request, this, this::sessionDelegate) {
+                @Override
+                public void render(Object body) { /** 内部请求 ignore **/ }
+            });
+        }
+        // 3. 中间的分片直接处理, 不用到Controller层
+        else {
+            log.info("Other upload piece: " + uploadId);
+            for (FileData fd : fds) { stream.addStream(fd.getInputStream()); }
+            if (end) stream.enEnd();
+            hCtx.render(ApiResp.ok().attr("uploadId", uploadId).attr("left", stream.left()).attr("isEnd", stream.isEnd()));
+        }
+        return true;
     }
 
 

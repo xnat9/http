@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
 <!--    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">-->
-    <title>测试 html 文件上传 websocket</title>
+    <title>测试 html 文件上传</title>
     <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/heyui"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/heyui/themes/index.css" />
@@ -18,7 +18,7 @@
             上传列表...
             <li v-for="f in uploadingFiles">
                 文件名:
-                <a v-if="f.url" :href="f.url">{{f.name}}</a>
+                <a v-if="f.downloadUrl" :href="f.downloadUrl">{{f.name}}</a>
                 <span v-else>{{f.name}}</span>
                 <br/>
                 <progress max="100" :value="f.progress"></progress><br>
@@ -41,31 +41,13 @@
     let app = new Vue({
         el: '#app',
         data: {
-            ws: null, msg: '', addResult: null,
-            optId:'', loading: false, list: [], keyword: '',
-            showAddForm: false, addForm: {},
-            files: [],
-            picUrl: 'http://125.67.237.26:9672/staticResource/freeTrade/recognizeRecord/20200320220709ocrc7ff8db843054ca0/3/2020031010006.jpg',
             uploadingFiles: []
         },
-        components: {
-            // upload: httpVueLoader('coms/Upload.vue')()
-        },
-        mounted: function () {
-            ws()
-        },
-        watch: {
-            keyword: function (v) {this.search(v)},
-            files: function (v) {
-                console.log('xxxxxxxxxxxxxxxxxxx: ', v)
-            }
-        },
         methods: {
-            uploadFile: function () { // 文件上传
-                let _this = this;
+            uploadFile() { // 文件上传
                 let fd = new FormData($('#form1')[0]);
                 let file = fd.get('file');
-                if (file.size > 1024 * 1024 * 10) { // 如果文件大于10M 就分片上传
+                if (file.size > 1024 * 1024 * 20) { // 如果文件大于20M 就分片上传
                     this.pieceUpload(file); return;
                 } else {
                     $.ajax({
@@ -75,8 +57,8 @@
                         contentType: false,
                         processData: false,
                         success: (resp) => {
-                            if (resp.code === '00') _this.addResult = resp;
-                            else this.$Notice.error({title: '错误提示', desc: resp.desc, duration: 7})
+                            if (resp.code === '00') this.$Message.success("上传成功: " + file.name);
+                            else this.$Message.error({title: '错误提示', desc: resp.desc, duration: 7})
                         }
                     })
                 }
@@ -84,44 +66,45 @@
             pieceUpload(file) { // 分片上传文件
                 let uploading = { // 分片上传对象
                     file: file, name: file.name, pause: false, // 是否暂停
-                    perPieceSize: 1024 * 1024 * 9,
+                    perPieceSize: 1024 * 1024 * 10,
                     totalPiece: 0, currentPiece: 0,
                     progress: 0, //上传的进度 0~100
-                    url: null,
+                    downloadUrl: null,
                     uploadId: (((1+Math.random())*0x10000)|0).toString(16) + (((1+Math.random())*0x10000)|0).toString(16) + '_' + new Date().getTime()
                 };
                 uploading.totalPiece = Math.ceil(file.size / uploading.perPieceSize);
                 this.uploadingFiles.push(uploading); // 保存已上传的分片信息
                 this.doUpload(uploading)
             },
-            doUpload: function(uploading) { //上传某一个分片
-                let _this = this;
+            doUpload(uploading) { //上传某一个分片
                 let fd = new FormData();
                 let startIndex = uploading.currentPiece++ * uploading.perPieceSize;
                 let endIndex = Math.min(startIndex + uploading.perPieceSize, uploading.file.size);
                 fd.append('file', uploading.file.slice(startIndex, endIndex)); //分割当前上传的数据段
                 $.ajax({
-                    url: 'test/pieceUpload',
+                    url: 'test/upload',
                     type: 'post',
                     headers: {
                         "x-pieceupload-id": uploading.uploadId,
                         "x-pieceupload-filename": uploading.name,
+                        "x-pieceupload-end": uploading.totalPiece === uploading.currentPiece,
                     },
                     data: fd,
                     contentType: false,
                     processData: false,
-                    success: function (resp) {
-                        if (resp.code == '00') {
+                    success: (resp) => {
+                        if (resp.code === '00') {
                             if (!uploading.pause && uploading.totalPiece > uploading.currentPiece) {
                                 uploading.progress = (100 / uploading.totalPiece) * uploading.currentPiece;
-                                console.log('============', resp);
-                                _this.doUpload(uploading)
+                                this.doUpload(uploading)
                             }
                             if (uploading.totalPiece === uploading.currentPiece) {
                                 uploading.progress = 100;
                                 uploading.url = resp.data
                             }
-                        } else console.log(resp.desc);
+                        } else {
+                            this.$Message.error(resp.desc);
+                        }
                     }
                 })
             },
@@ -131,34 +114,8 @@
             resume: function(uploading) { // 恢复上传
                 uploading.pause = false;
                 this.doUpload(uploading)
-            },
-            downXlsx: function() {
-                let xhr = new XMLHttpRequest();
-                xhr.open('post', 'test/download/tmp.xlsx', true);
-                xhr.responseType = 'blob';
-                // xhr.setRequestHeader('Content-Type', 'application/json;charset=utf-8');
-                xhr.onload = function () {
-                    if (this.status == 200) {
-                        let blob = this.response;
-                        let a = document.createElement('a');
-                        let url = window.URL.createObjectURL(blob);
-                        a.href = url;
-                        //设置文件名称
-                        a.download = '用户信息.xls';
-                        a.click();
-                    }
-                };
             }
         },
-    });
-    $.ajaxSetup({
-        complete: (xhr) => {
-            if (xhr.status == 401) { // 登录实效 or 未登录
-                app.$data.user = null
-            } else if (xhr.status == 403) {
-                app.$Notice.error('没有权限');
-            }
-        }
     });
 </script>
 </body>

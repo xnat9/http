@@ -272,7 +272,7 @@ public class HttpDecoder {
     protected boolean readMultipartValue(ByteBuffer buf) throws Exception {
         if (curPart.filename != null) { // 文件 Part, filename  可能是个空字符串
             int index = indexOf(buf, ("\r\n--" + boundary.get()).getBytes(request.session.server.getCharset()));
-            if (curPart.fd == null) { // 临时存放文件
+            if (curPart.fd == null) {
                 curPart.fd = new FileData().setOriginName(curPart.filename).setInputStream(curPart.createInputStream());
                 if (multiForm.containsKey(curPart.name)) { // 有多个值
                     Object v = multiForm.get(curPart.name);
@@ -394,6 +394,11 @@ public class HttpDecoder {
             fileInputStream = new InputStream() {
                 protected InputStream currentStream;
                 @Override
+                public int available() throws IOException {
+                    return currentStream == null ? 0 : currentStream.available() + fileContent.stream().mapToInt(ByteArrayInputStream::available).sum();
+                }
+
+                @Override
                 public int read() throws IOException {
                     if (currentStream == null) {
                         if (fileContent.isEmpty()) return -1;
@@ -406,6 +411,7 @@ public class HttpDecoder {
                     }
                     return result;
                 }
+
                 @Override
                 public int read(byte[] b, int off, int len) throws IOException {
                     if (currentStream != null && currentStream.available() >= len) {
