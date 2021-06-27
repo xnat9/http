@@ -12,40 +12,59 @@
     <script src="js/common.js"></script>
 </head>
 <body>
-<div id="app" class="container-fluid">
-    <div id="pieceUpload">
-        <ul v-if="uploadingFiles">
-            上传列表...
-            <li v-for="f in uploadingFiles">
-                文件名:
-                <a v-if="f.url" :href="f.url">{{f.name}}</a>
-                <span v-else>{{f.name}}</span>
-                <br/>
-                <progress max="100" :value="f.progress"></progress><br>
-                <div v-if="f.progress < 100">
-                    <button v-if="f.pause" @click="resume(f)">继续</button>
-                    <button v-else @click="suspend(f)">暂停</button>
-                </div>
-            </li>
-        </ul>
+<div id="app">
+    <div class="h-panel">
+        <div class="h-panel-bar">
+            <span class="h-panel-title">普通表单</span>
+        </div>
+        <div class="h-panel-body">
+            <h-form :model="textForm">
+                <h-formitem>
+                    <input type="text" v-model="textForm.text">
+                </h-formitem>
+                <h-formitem>
+                    <h-button @click="submitTextForm">提交</h-button>
+                </h-formitem>
+            </h-form>
+        </div>
     </div>
 
-    <div>
-        <form id="form1">
-            <input type="file" name="file">
-            <input type="button" value="提交" @click="uploadFile">
-        </form>
+    <div class="h-panel">
+        <div class="h-panel-bar">
+            <span class="h-panel-title">文件上传</span>
+        </div>
+        <div class="h-panel-body">
+            <div>
+                <ul v-if="uploadingFiles">
+                    <li v-for="f in uploadingFiles">
+                        文件名:
+                        <a v-if="f.downloadUrl" :href="f.downloadUrl">{{f.name}}</a>
+                        <span v-else>{{f.name}}</span>
+                        <br/>
+                        <h-progress :percent="f.progress" :color="f.error ? 'red' : f.progress >= 100 ? 'green' : 'blue'">
+                            <span v-if="f.error">错误</span>
+                            <span v-else-if="f.progress >= 100" slot="text">成功</span>
+                            <span v-else>
+                                {{f.progress + '%'}}
+                                <button v-if="f.pause" @click="resume(f)">继续</button>
+                                <button v-else @click="suspend(f)">暂停</button>
+                            </span>
+                        </h-progress><br>
+                    </li>
+                </ul>
+            </div>
+            <form ref="fileForm">
+                <input type="file" name="file">
+                <input type="button" value="提交" @click="uploadFile">
+            </form>
+        </div>
     </div>
 </div>
 <script>
     let app = new Vue({
         el: '#app',
         data: {
-            ws: null, msg: '', addResult: null,
-            optId:'', loading: false, list: [], keyword: '',
-            showAddForm: false, addForm: {},
-            files: [],
-            picUrl: 'http://125.67.237.26:9672/staticResource/freeTrade/recognizeRecord/20200320220709ocrc7ff8db843054ca0/3/2020031010006.jpg',
+            textForm: {},
             uploadingFiles: []
         },
         components: {
@@ -54,18 +73,26 @@
         mounted: function () {
             ws()
         },
-        watch: {
-            keyword: function (v) {this.search(v)},
-            files: function (v) {
-                console.log('xxxxxxxxxxxxxxxxxxx: ', v)
-            }
-        },
         methods: {
-            uploadFile: function () { // 文件上传
-                let _this = this;
-                let fd = new FormData($('#form1')[0]);
+            submitTextForm() {
+                $.ajax({
+                    url: 'test/form',
+                    type: 'post',
+                    data: this.textForm,
+                    success: (resp) => {
+                        console.log(resp);
+                    }
+                })
+            },
+            uploadFile() { // 文件上传
+                let fd = new FormData(this.$refs.fileForm);
                 let file = fd.get('file');
-                if (file.size > 1024 * 1024 * 10) { // 如果文件大于10M 就分片上传
+                if (!file) {
+                    this.$Message.warn('没有可上传的文件')
+                    return;
+                }
+                fd.append("version", null);
+                if (file.size > 1024 * 1024 * 20) { // 如果文件大于20M 就分片上传
                     this.pieceUpload(file); return;
                 } else {
                     $.ajax({
@@ -75,8 +102,8 @@
                         contentType: false,
                         processData: false,
                         success: (resp) => {
-                            if (resp.code === '00') _this.addResult = resp;
-                            else this.$Notice.error({title: '错误提示', desc: resp.desc, duration: 7})
+                            if (resp.code === '00') this.$Message.success("上传成功: " + file.name);
+                            else this.$Message.error({title: '错误提示', desc: resp.desc, duration: 7})
                         }
                     })
                 }
@@ -84,44 +111,47 @@
             pieceUpload(file) { // 分片上传文件
                 let uploading = { // 分片上传对象
                     file: file, name: file.name, pause: false, // 是否暂停
-                    perPieceSize: 1024 * 1024 * 9,
+                    perPieceSize: 1024 * 1024 * 15,
                     totalPiece: 0, currentPiece: 0,
                     progress: 0, //上传的进度 0~100
-                    url: null,
+                    downloadUrl: null,
+                    error: '',
                     uploadId: (((1+Math.random())*0x10000)|0).toString(16) + (((1+Math.random())*0x10000)|0).toString(16) + '_' + new Date().getTime()
                 };
                 uploading.totalPiece = Math.ceil(file.size / uploading.perPieceSize);
                 this.uploadingFiles.push(uploading); // 保存已上传的分片信息
                 this.doUpload(uploading)
             },
-            doUpload: function(uploading) { //上传某一个分片
-                let _this = this;
+            doUpload(uploading) { //上传某一个分片
                 let fd = new FormData();
                 let startIndex = uploading.currentPiece++ * uploading.perPieceSize;
                 let endIndex = Math.min(startIndex + uploading.perPieceSize, uploading.file.size);
                 fd.append('file', uploading.file.slice(startIndex, endIndex)); //分割当前上传的数据段
                 $.ajax({
-                    url: 'test/pieceUpload',
+                    url: 'test/upload',
                     type: 'post',
                     headers: {
                         "x-pieceupload-id": uploading.uploadId,
                         "x-pieceupload-filename": uploading.name,
+                        "x-pieceupload-end": uploading.totalPiece === uploading.currentPiece,
                     },
                     data: fd,
                     contentType: false,
                     processData: false,
-                    success: function (resp) {
-                        if (resp.code == '00') {
+                    success: (resp) => {
+                        if (resp.code === '00') {
                             if (!uploading.pause && uploading.totalPiece > uploading.currentPiece) {
                                 uploading.progress = (100 / uploading.totalPiece) * uploading.currentPiece;
-                                console.log('============', resp);
-                                _this.doUpload(uploading)
+                                this.doUpload(uploading)
                             }
                             if (uploading.totalPiece === uploading.currentPiece) {
                                 uploading.progress = 100;
                                 uploading.url = resp.data
                             }
-                        } else console.log(resp.desc);
+                        } else {
+                            uploading.error = resp.desc;
+                            this.$Message.error(resp.desc);
+                        }
                     }
                 })
             },
@@ -132,33 +162,7 @@
                 uploading.pause = false;
                 this.doUpload(uploading)
             },
-            downXlsx: function() {
-                let xhr = new XMLHttpRequest();
-                xhr.open('post', 'test/download/tmp.xlsx', true);
-                xhr.responseType = 'blob';
-                // xhr.setRequestHeader('Content-Type', 'application/json;charset=utf-8');
-                xhr.onload = function () {
-                    if (this.status == 200) {
-                        let blob = this.response;
-                        let a = document.createElement('a');
-                        let url = window.URL.createObjectURL(blob);
-                        a.href = url;
-                        //设置文件名称
-                        a.download = '用户信息.xls';
-                        a.click();
-                    }
-                };
-            }
         },
-    });
-    $.ajaxSetup({
-        complete: (xhr) => {
-            if (xhr.status == 401) { // 登录实效 or 未登录
-                app.$data.user = null
-            } else if (xhr.status == 403) {
-                app.$Notice.error('没有权限');
-            }
-        }
     });
 </script>
 </body>

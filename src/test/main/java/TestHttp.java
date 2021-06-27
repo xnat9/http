@@ -15,7 +15,7 @@ public class TestHttp {
     public static void main(String[] args) throws Exception {
         ThreadPoolExecutor exec = new ThreadPoolExecutor(
                 4, 8, 2, TimeUnit.HOURS,
-                new LinkedBlockingQueue<>(),
+                new LinkedBlockingQueue<>(100000),
                 new ThreadFactory() {
                     final AtomicInteger i = new AtomicInteger(1);
 
@@ -42,7 +42,7 @@ public class TestHttp {
         })).ctrls( // 添加Controller层类
                 MainCtrl.class, TestCtrl.class
         ).start();
-        Thread.sleep(1000 * 60 * 10);
-        server.stop();
+        Thread.sleep(1000 * 60 * 30);
+        //server.stop();
     }
 }

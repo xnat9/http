@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -51,6 +52,10 @@ public class HttpServer {
      */
     protected final Lazies<Charset> _charset         = new Lazies<>(() -> Charset.forName(getStr("charset", "utf-8")));
     /**
+     * 文件最大长度限制(即: 分片上传的最大文件限制). 默认200M
+     */
+    protected final Lazies<Long> _fileMaxLength      = new Lazies<>(() -> getLong("fileMaxLength", 1024 * 1024 * 200L));
+    /**
      * mvc: m层执行链
      */
     protected final Chain                       chain            = new Chain(this);
@@ -89,15 +94,18 @@ public class HttpServer {
      */
     protected final ExecutorService exec;
     /**
-     * 分片上传流映射
+     * 分片上传映射
      */
-    protected final Map<String, ConvergeInputStream> pieceUploadMap = new ConcurrentHashMap<>();
+    protected final Map<String, FileData> pieceUploadMap = new ConcurrentHashMap<>();
 
 
     /**
      * 创建
      * @param attrs 属性集
-     *              maxFileSize: 单文件上传大小限制. 默认20M
+     *              textBodyMaxLength: 文本body长度限制. 默认10M
+     *              textPartValueMaxLength: 文本part值最大长度限制. 默认5M
+     *              filePartValueMaxLength: 文件part值最大长度限制(即: 单个请求上传单文件最大长度限制). 默认20M
+     *              fileMaxLength: 文件最大长度限制(即: 分片上传的最大文件限制). 默认200M
      *              writeTimeout: 数据写入超时时间. 单位:毫秒
      *              connection.maxIdle: 连接最大存活时间
      *              maxConnection: 最大连接数
@@ -155,7 +163,7 @@ public class HttpServer {
      */
     public void stop() {
         enabled = false;
-        try { if (connections.size() > 2) {Thread.sleep(1000L);} ssc.close(); } catch (Exception e) {/** ignore **/}
+        try { if (connections.size() > 2) { Thread.sleep(1000L); } ssc.close(); } catch (Exception e) {/** ignore **/}
         exec.shutdown();
     }
 
@@ -180,8 +188,9 @@ public class HttpServer {
                     hCtx.close(); return;
                 }
                 // 判断是否是分片上传请求
-                if (pieceUpload(hCtx)) return;
-                chain.handle(hCtx);
+                String uploadId = hCtx.request.getHeader("x-pieceupload-id");
+                if (uploadId == null) chain.handle(hCtx);
+                else pieceUpload(hCtx, uploadId);
             } else {
                 hCtx.response.status(503);
                 hCtx.render(ApiResp.fail("server busy, please wait..."));
@@ -202,22 +211,22 @@ public class HttpServer {
      * x-pieceupload-filename: xxx.txt
      * x-pieceupload-progress: get: 获取进度
      * @param hCtx HttpContext
+     * @param uploadId 上传id
      * @return true: 当前请求是分片文件上传请求; false 普通请求
      */
-    protected boolean pieceUpload(HttpContext hCtx) throws Exception {
-        String uploadId = hCtx.request.getHeader("x-pieceupload-id");
-        if (uploadId == null) return false;
-        log.info("Upload piece: " + uploadId);
-        ConvergeInputStream stream = pieceUploadMap.get(uploadId);
+    protected void pieceUpload(HttpContext hCtx, String uploadId) throws Exception {
+        if (uploadId == null) return;
+        FileData convergeFd = pieceUploadMap.get(uploadId);
+        ConvergeInputStream convergeStream = convergeFd == null ? null : (ConvergeInputStream) convergeFd.getInputStream();
         String progress = hCtx.request.getHeader("x-pieceupload-progress");
         // 1. 判断当前请求是否只拿分片上传的后端进度
         if ("get".equalsIgnoreCase(progress)) {
             hCtx.render(
                     ApiResp.ok().attr("uploadId", uploadId)
-                            .attr("left", stream == null ? 0 : stream.left())
-                            .attr("isEnd", stream == null || stream.isEnd())
+                            .attr("isEnd", convergeStream == null || convergeStream.isEnd())
+                            .attr("left", convergeStream == null ? 0 : convergeStream.left())
             );
-            return true;
+            return;
         }
 
         // 判断是否是最后一个分片
@@ -229,41 +238,64 @@ public class HttpServer {
                 .collect(Collectors.toList());
         if (fds.isEmpty()) {
             hCtx.render(ApiResp.fail("First upload piece is empty"));
-            return true;
+            return;
         }
         // 2. 第一个分片上传
-        if (stream == null) {
-            stream = new ConvergeInputStream();
-            pieceUploadMap.put(uploadId, stream);
-            log.info("First upload piece: " + uploadId);
+        if (convergeFd == null) {
+            // 后边所有的文件分片都汇聚到第一个
+            convergeFd = fds.get(0);
+            convergeStream = new ConvergeInputStream();
+            pieceUploadMap.put(uploadId, convergeFd);
 
-            stream.addStream(fds.get(0).getInputStream());
-            fds.get(0).setInputStream(stream);
-            fds.get(0).setOriginName(hCtx.request.getHeader("x-pieceupload-filename"));
+            convergeStream.addStream(convergeFd.getInputStream());
+            convergeFd.setInputStream(convergeStream);
+            convergeFd.setOriginName(hCtx.request.getHeader("x-pieceupload-filename"));
+            for (int i = 1; i < fds.size(); i++) {
+                convergeStream.addStream(fds.get(i).getInputStream());
+                convergeFd.setSize(convergeFd.getSize() == null ? 0 : convergeFd.getSize() + fds.get(i).getSize());
+                if (convergeFd.getSize() > _fileMaxLength.get()) {
+                    throw new RuntimeException("File too large");
+                }
+            }
+            if (end) convergeStream.enEnd();
+            hCtx.render(ApiResp.ok().attr("uploadId", uploadId)
+                    .attr("fileId", convergeFd.getFinalName())
+                    .attr("isEnd", convergeStream.isEnd())
+                    .attr("left", convergeStream.left()));
 
-            for (int i = 1; i < fds.size(); i++) { stream.addStream(fds.get(i).getInputStream()); }
-
-            if (end) stream.enEnd();
-            // 清理时间长的, 已结束的流
             exec.execute(() -> {
+                // 清理时间长的 和 已结束的流
                 long expire = Duration.ofMinutes(getLong("pieceUpload.expire", 180L)).toMillis();
-                pieceUploadMap.entrySet().removeIf(e -> e.getValue().isEnd() || System.currentTimeMillis() - e.getValue().createTime > expire);
-            });
-            hCtx.render(ApiResp.ok().attr("uploadId", uploadId).attr("fileId", fds.get(0).getFinalName()).attr("left", stream.left()).attr("isEnd", stream.isEnd()));
-            log.info("First upload piece end: " + uploadId);
-            chain.handle(new HttpContext(hCtx.request, this, this::sessionDelegate) {
-                @Override
-                public void render(Object body) { /** 内部请求 ignore **/ }
+                pieceUploadMap.entrySet().removeIf(e -> {
+                    try {
+                        ConvergeInputStream stream = (ConvergeInputStream) e.getValue().getInputStream();
+                        return stream.isEnd() || System.currentTimeMillis() - stream.createTime > expire;
+                    } catch (FileNotFoundException ex) {
+                        throw new RuntimeException(ex);
+                    }
+                });
+                // 转发一个新的内部请求到Controller层
+                chain.handle(new HttpContext(hCtx.request, this, this::sessionDelegate) {
+                    @Override
+                    public void render(Object body) { /** 内部请求 ignore **/ }
+                });
             });
         }
         // 3. 中间的分片直接处理, 不用到Controller层
         else {
-            log.info("Other upload piece: " + uploadId);
-            for (FileData fd : fds) { stream.addStream(fd.getInputStream()); }
-            if (end) stream.enEnd();
-            hCtx.render(ApiResp.ok().attr("uploadId", uploadId).attr("left", stream.left()).attr("isEnd", stream.isEnd()));
+            for (FileData fd : fds) {
+                convergeStream.addStream(fd.getInputStream());
+                convergeFd.setSize(convergeFd.getSize() == null ? 0 : convergeFd.getSize() + fd.getSize());
+                if (convergeFd.getSize() > _fileMaxLength.get()) { throw new RuntimeException("File too large"); }
+            }
+            if (end) convergeStream.enEnd();
+            hCtx.render(
+                    ApiResp.ok().attr("uploadId", uploadId)
+                            .attr("fileId", convergeFd.getFinalName())
+                            .attr("isEnd", convergeStream.isEnd())
+                            .attr("left", convergeStream.left())
+            );
         }
-        return true;
     }
 
 
