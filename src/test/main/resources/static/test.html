@@ -42,13 +42,14 @@
                         <span v-else>{{f.name}}</span>
                         <br/>
                         <h-progress :percent="f.progress" :color="f.error ? 'red' : f.progress >= 100 ? 'green' : 'blue'">
-                            <span v-if="f.error">错误</span>
-                            <span v-else-if="f.progress >= 100" slot="text">成功</span>
-                            <span v-else>
-                                {{f.progress + '%'}}
-                                <button v-if="f.pause" @click="resume(f)">继续</button>
-                                <button v-else @click="suspend(f)">暂停</button>
-                            </span>
+                            <div slot="text">
+                                <span v-if="f.error">错误</span>
+                                <span v-else>{{f.progress + '%'}}</span>
+                                <span v-if="!f.error && f.progress < 100">
+                                    <button v-if="f.pause" @click="resume(f)">继续</button>
+                                    <button v-else @click="suspend(f)">暂停</button>
+                                </span>
+                            </div>
                         </h-progress><br>
                     </li>
                 </ul>
@@ -141,7 +142,7 @@
                     success: (resp) => {
                         if (resp.code === '00') {
                             if (!uploading.pause && uploading.totalPiece > uploading.currentPiece) {
-                                uploading.progress = (100 / uploading.totalPiece) * uploading.currentPiece;
+                                uploading.progress = Math.floor((100 / uploading.totalPiece) * uploading.currentPiece);
                                 this.doUpload(uploading)
                             }
                             if (uploading.totalPiece === uploading.currentPiece) {

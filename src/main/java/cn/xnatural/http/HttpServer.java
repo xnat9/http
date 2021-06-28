@@ -4,7 +4,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -189,8 +188,15 @@ public class HttpServer {
                 }
                 // 判断是否是分片上传请求
                 String uploadId = hCtx.request.getHeader("x-pieceupload-id");
-                if (uploadId == null) chain.handle(hCtx);
-                else pieceUpload(hCtx, uploadId);
+                HttpContext finalHCtx = hCtx;
+                exec.execute(() -> { // 异步Controller
+                    try {
+                        if (uploadId == null) chain.handle(finalHCtx);
+                        else pieceUpload(finalHCtx, uploadId);
+                    } catch (Exception ex) {
+                        errHandle(ex, finalHCtx);
+                    }
+                });
             } else {
                 hCtx.response.status(503);
                 hCtx.render(ApiResp.fail("server busy, please wait..."));
@@ -263,22 +269,17 @@ public class HttpServer {
                     .attr("isEnd", convergeStream.isEnd())
                     .attr("left", convergeStream.left()));
 
-            exec.execute(() -> {
-                // 清理时间长的 和 已结束的流
-                long expire = Duration.ofMinutes(getLong("pieceUpload.expire", 180L)).toMillis();
-                pieceUploadMap.entrySet().removeIf(e -> {
-                    try {
-                        ConvergeInputStream stream = (ConvergeInputStream) e.getValue().getInputStream();
-                        return stream.isEnd() || System.currentTimeMillis() - stream.createTime > expire;
-                    } catch (FileNotFoundException ex) {
-                        throw new RuntimeException(ex);
-                    }
-                });
-                // 转发一个新的内部请求到Controller层
-                chain.handle(new HttpContext(hCtx.request, this, this::sessionDelegate) {
-                    @Override
-                    public void render(Object body) { /** 内部请求 ignore **/ }
-                });
+            // 清理时间长的 和 已结束的流
+            long expire = Duration.ofMinutes(getLong("pieceUpload.expire", 180L)).toMillis();
+            for (Iterator<Map.Entry<String, FileData>> it = pieceUploadMap.entrySet().iterator(); it.hasNext(); ) {
+                Map.Entry<String, FileData> e = it.next();
+                ConvergeInputStream stream = (ConvergeInputStream) e.getValue().getInputStream();
+                if (stream.isEnd() || System.currentTimeMillis() - stream.createTime > expire) it.remove();
+            }
+            // 转发一个新的内部请求到Controller层
+            chain.handle(new HttpContext(hCtx.request, this, this::sessionDelegate) {
+                @Override
+                public void render(Object body) { /** 内部请求 ignore **/ }
             });
         }
         // 3. 中间的分片直接处理, 不用到Controller层

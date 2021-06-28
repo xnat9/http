@@ -1,5 +1,5 @@
 # 介绍
-轻量级 http 服务 基于 jdk aio
+轻量级异步AIO http服务
 
 # 安装教程
 ```xml
@@ -44,7 +44,7 @@ Map<String, Object> attrs = new HashMap<>();
 attrs.put("hp", ":7070");
 attrs.put("fileMaxLength", 1024 * 1024 * 500); // 500M
 ThreadPoolExecutor exec = new ThreadPoolExecutor(
-    4, 8, 6, TimeUnit.HOURS,
+    4, 8, 2, TimeUnit.HOURS,
     new LinkedBlockingQueue<>(100000),
     new ThreadFactory() {
       final AtomicInteger i = new AtomicInteger(1);
@@ -445,6 +445,7 @@ test:test
 
 # TODO
 * 等待所有HttContext提交
+* json自定义序列化
 
 # 参与贡献
 xnatural@msn.cn
