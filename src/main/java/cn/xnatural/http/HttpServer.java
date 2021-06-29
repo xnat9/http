@@ -51,6 +51,10 @@ public class HttpServer {
      */
     protected final Lazies<Charset> _charset         = new Lazies<>(() -> Charset.forName(getStr("charset", "utf-8")));
     /**
+     * 文件最大长度限制(即: 分片上传的最大文件限制). 默认200M
+     */
+    protected final Lazies<Long> _fileMaxLength      = new Lazies<>(() -> getLong("fileMaxLength", 1024 * 1024 * 200L));
+    /**
      * mvc: m层执行链
      */
     protected final Chain                       chain            = new Chain(this);
@@ -88,12 +92,19 @@ public class HttpServer {
      * 线程池执行器
      */
     protected final ExecutorService exec;
+    /**
+     * 分片上传映射
+     */
+    protected final Map<String, FileData> pieceUploadMap = new ConcurrentHashMap<>();
 
 
     /**
      * 创建
      * @param attrs 属性集
-     *              maxFileSize: 单文件上传大小限制. 默认20M
+     *              textBodyMaxLength: 文本body长度限制. 默认10M
+     *              textPartValueMaxLength: 文本part值最大长度限制. 默认5M
+     *              filePartValueMaxLength: 文件part值最大长度限制(即: 单个请求上传单文件最大长度限制). 默认20M
+     *              fileMaxLength: 文件最大长度限制(即: 分片上传的最大文件限制). 默认200M
      *              writeTimeout: 数据写入超时时间. 单位:毫秒
      *              connection.maxIdle: 连接最大存活时间
      *              maxConnection: 最大连接数
@@ -151,7 +162,7 @@ public class HttpServer {
      */
     public void stop() {
         enabled = false;
-        try { if (connections.size() > 2) {Thread.sleep(1000L);} ssc.close(); } catch (Exception e) {/** ignore **/}
+        try { if (connections.size() > 2) { Thread.sleep(1000L); } ssc.close(); } catch (Exception e) {/** ignore **/}
         exec.shutdown();
     }
 
@@ -175,7 +186,17 @@ public class HttpServer {
                     hCtx.render(ApiResp.fail("server busy, please wait..."));
                     hCtx.close(); return;
                 }
-                chain.handle(hCtx);
+                // 判断是否是分片上传请求
+                String uploadId = hCtx.request.getHeader("x-pieceupload-id");
+                HttpContext finalHCtx = hCtx;
+                exec.execute(() -> { // 异步Controller
+                    try {
+                        if (uploadId == null) chain.handle(finalHCtx);
+                        else pieceUpload(finalHCtx, uploadId);
+                    } catch (Exception ex) {
+                        errHandle(ex, finalHCtx);
+                    }
+                });
             } else {
                 hCtx.response.status(503);
                 hCtx.render(ApiResp.fail("server busy, please wait..."));
@@ -186,6 +207,95 @@ public class HttpServer {
             if (hCtx != null) {
                 hCtx.response.status(500); hCtx.render(); hCtx.close();
             }
+        }
+    }
+
+    /**
+     * 文件分片上传实现:
+     * x-pieceupload-id: 上传id(用于分辨是否是同一个文件上传)
+     * x-pieceupload-end: true/false: 是否结束
+     * x-pieceupload-filename: xxx.txt
+     * x-pieceupload-progress: get: 获取进度
+     * @param hCtx HttpContext
+     * @param uploadId 上传id
+     * @return true: 当前请求是分片文件上传请求; false 普通请求
+     */
+    protected void pieceUpload(HttpContext hCtx, String uploadId) throws Exception {
+        if (uploadId == null) return;
+        FileData convergeFd = pieceUploadMap.get(uploadId);
+        ConvergeInputStream convergeStream = convergeFd == null ? null : (ConvergeInputStream) convergeFd.getInputStream();
+        String progress = hCtx.request.getHeader("x-pieceupload-progress");
+        // 1. 判断当前请求是否只拿分片上传的后端进度
+        if ("get".equalsIgnoreCase(progress)) {
+            hCtx.render(
+                    ApiResp.ok().attr("uploadId", uploadId)
+                            .attr("isEnd", convergeStream == null || convergeStream.isEnd())
+                            .attr("left", convergeStream == null ? 0 : convergeStream.left())
+            );
+            return;
+        }
+
+        // 判断是否是最后一个分片
+        String endStr = hCtx.request.getHeader("x-pieceupload-end");
+        Boolean end = endStr != null && Boolean.valueOf(endStr);
+
+        List<FileData> fds = hCtx.request.getFormParams().values().stream()
+                .filter(o -> o instanceof FileData).map(o -> (FileData) o)
+                .collect(Collectors.toList());
+        if (fds.isEmpty()) {
+            hCtx.render(ApiResp.fail("First upload piece is empty"));
+            return;
+        }
+        // 2. 第一个分片上传
+        if (convergeFd == null) {
+            // 后边所有的文件分片都汇聚到第一个
+            convergeFd = fds.get(0);
+            convergeStream = new ConvergeInputStream();
+            pieceUploadMap.put(uploadId, convergeFd);
+
+            convergeStream.addStream(convergeFd.getInputStream());
+            convergeFd.setInputStream(convergeStream);
+            convergeFd.setOriginName(hCtx.request.getHeader("x-pieceupload-filename"));
+            for (int i = 1; i < fds.size(); i++) {
+                convergeStream.addStream(fds.get(i).getInputStream());
+                convergeFd.setSize(convergeFd.getSize() == null ? 0 : convergeFd.getSize() + fds.get(i).getSize());
+                if (convergeFd.getSize() > _fileMaxLength.get()) {
+                    throw new RuntimeException("File too large");
+                }
+            }
+            if (end) convergeStream.enEnd();
+            hCtx.render(ApiResp.ok().attr("uploadId", uploadId)
+                    .attr("fileId", convergeFd.getFinalName())
+                    .attr("isEnd", convergeStream.isEnd())
+                    .attr("left", convergeStream.left()));
+
+            // 清理时间长的 和 已结束的流
+            long expire = Duration.ofMinutes(getLong("pieceUpload.expire", 180L)).toMillis();
+            for (Iterator<Map.Entry<String, FileData>> it = pieceUploadMap.entrySet().iterator(); it.hasNext(); ) {
+                Map.Entry<String, FileData> e = it.next();
+                ConvergeInputStream stream = (ConvergeInputStream) e.getValue().getInputStream();
+                if (stream.isEnd() || System.currentTimeMillis() - stream.createTime > expire) it.remove();
+            }
+            // 转发一个新的内部请求到Controller层
+            chain.handle(new HttpContext(hCtx.request, this, this::sessionDelegate) {
+                @Override
+                public void render(Object body) { /** 内部请求 ignore **/ }
+            });
+        }
+        // 3. 中间的分片直接处理, 不用到Controller层
+        else {
+            for (FileData fd : fds) {
+                convergeStream.addStream(fd.getInputStream());
+                convergeFd.setSize(convergeFd.getSize() == null ? 0 : convergeFd.getSize() + fd.getSize());
+                if (convergeFd.getSize() > _fileMaxLength.get()) { throw new RuntimeException("File too large"); }
+            }
+            if (end) convergeStream.enEnd();
+            hCtx.render(
+                    ApiResp.ok().attr("uploadId", uploadId)
+                            .attr("fileId", convergeFd.getFinalName())
+                            .attr("isEnd", convergeStream.isEnd())
+                            .attr("left", convergeStream.left())
+            );
         }
     }
 

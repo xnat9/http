@@ -29,6 +29,12 @@ public class MainCtrl {
         return baseDir("src/test/main/resources/static/test.html");
     }
 
+    @Path(path = "upload.html")
+    File uploadHtml(HttpContext ctx) {
+        //ctx.response.cacheControl(3);
+        return baseDir("src/test/main/resources/static/upload.html");
+    }
+
     // 文件
     @Path(path = "file/:fName")
     File file(String fName) {

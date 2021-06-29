@@ -1,6 +1,8 @@
 package cn.xnatural.http;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -54,9 +56,13 @@ public class HttpDecoder {
      */
     protected Map<String, Object>   multiForm;
     /**
+     * 文本 body 内容
+     */
+    protected final Queue<byte[]> textBodyContent = new ConcurrentLinkedQueue<>();
+    /**
      * 请求体包含多个 Part时: part之间的分割符
      */
-    protected Lazies<String> boundary             = new Lazies<>(() -> {
+    protected final Lazies<String> boundary = new Lazies<>(() -> {
         if (request == null) return null;
         String ct = request.getContentType();
         if (ct == null) return null;
@@ -68,11 +74,15 @@ public class HttpDecoder {
     /**
      * 文本body长度限制
      */
-    protected Lazies<Integer> _textBodyLengthLimit = new Lazies<>(() -> request.session.server.getInteger("textBodyLengthLimit", 1024 * 1024));
+    protected Lazies<Integer> _textBodyMaxLength = new Lazies<>(() -> request.session.server.getInteger("textBodyMaxLength", 1024 * 1024 * 10));
     /**
-     * multipart/form-data, 单个值的大小限制, 单位: bit
+     * 文本part值最大长度限制
      */
-    protected Lazies<Integer> _multiValueMaxSize   = new Lazies<>(() -> request.session.server.getInteger("multiValueMaxSize", 1024 * 1024));
+    protected Lazies<Integer> _textPartValueMaxLength = new Lazies<>(() -> request.session.server.getInteger("textPartValueMaxLength", 1024 * 1024 * 5));
+    /**
+     * 文件part值最大长度限制(即: 单个请求上传单文件最大长度限制)
+     */
+    protected Lazies<Integer> _filePartValueMaxLength = new Lazies<>(() -> request.session.server.getInteger("filePartValueMaxLength", 1024 * 1024 * 20));
 
 
     HttpDecoder(HttpRequest request) { this.request = request; }
@@ -164,7 +174,6 @@ public class HttpDecoder {
      */
     protected boolean body(ByteBuffer buf) throws Exception {
         String ct = request.getContentType();
-
         if (ct == null || ct.isEmpty()) return true; // get 请求 有可能没得 body
         ct = ct.toLowerCase();
         int position = buf.position();
@@ -172,13 +181,14 @@ public class HttpDecoder {
             String lengthStr = request.getHeader("Content-Length");
             if (lengthStr != null) {
                 int length = Integer.valueOf(lengthStr);
-                if (length > _textBodyLengthLimit.get()) {
-                    throw new Exception("text body length limit to: " + _textBodyLengthLimit.get());
-                }
-                if (buf.remaining() < length) return false; // 数据没接收完
-                byte[] bs = new byte[length];
+                if (length > _textBodyMaxLength.get()) throw new Exception("text body too large");
+                byte[] bs = new byte[buf.remaining()];
                 buf.get(bs);
-                request.bodyStr = new String(bs, request.session.server.getCharset());
+                textBodyContent.offer(bs);
+                if (textBodyContent.stream().mapToInt(b -> b.length).sum() < length) { // 数据没接收完
+                    return false;
+                }
+                request.bodyStr = text(textBodyContent);
             }
             bodySize += buf.position() - position;
             return true;
@@ -252,9 +262,20 @@ public class HttpDecoder {
                 for (String entry : line.split(":")[1].split(";")) {
                     String[] arr = entry.split("=");
                     if (arr.length > 1) {
-                        if ("name".equals(arr[0].trim())) curPart.name = arr[1].replace("\"", "").replace("\r", "");
+                        if ("name".equals(arr[0].trim())) {
+                            curPart.name = arr[1].replace("\"", "").replace("\r", "");
+                        }
                         else if ("filename".equals(arr[0].trim())) {
-                            curPart.filename = arr[1].replace("\"", "").replace("\r", "");
+                            curPart.fileData = new FileData().setOriginName(
+                                    arr[1].replace("\"", "").replace("\r", "")
+                            ).setInputStream(curPart.valueInputStream);
+                            if (multiForm.containsKey(curPart.name)) { // 有多个值
+                                Object v = multiForm.get(curPart.name);
+                                if (v instanceof List) ((List) v).add(curPart.fileData);
+                                else {
+                                    multiForm.put(curPart.name, new LinkedList<>(Arrays.asList(v, curPart.fileData)));
+                                }
+                            } else multiForm.put(curPart.name, curPart.fileData);
                         }
                     }
                 }
@@ -270,61 +291,63 @@ public class HttpDecoder {
      * @return true: 读完, false 未读完(数据不够)
      */
     protected boolean readMultipartValue(ByteBuffer buf) throws Exception {
-        if (curPart.filename != null) { // 文件 Part, filename  可能是个空字符串
-            int index = indexOf(buf, ("\r\n--" + boundary.get()).getBytes(request.session.server.getCharset()));
-            if (curPart.fd == null) { // 临时存放文件
-                curPart.fd = new FileData().setOriginName(curPart.filename).setInputStream(curPart.createInputStream());
-                if (multiForm.containsKey(curPart.name)) { // 有多个值
-                    Object v = multiForm.get(curPart.name);
-                    if (v instanceof List) ((List) v).add(curPart.fd);
-                    else {
-                        multiForm.put(curPart.name, new LinkedList<>(Arrays.asList(v, curPart.fd)));
-                    }
-                } else multiForm.put(curPart.name, curPart.fd);
-            }
+        // part分隔符位置
+        int index = indexOf(buf, ("\r\n--" + boundary.get()).getBytes(request.session.server.getCharset()));
+        if (curPart.fileData != null) { // 文件 Part
             if (index == -1) { // 没找到结束符. 证明buf 里面全是文件的内容
-                int length = buf.remaining();
-                byte[] bs = new byte[length];
+                byte[] bs = new byte[buf.remaining()];
                 buf.get(bs);
-                curPart.addFileContent(bs);
-                // 单文件上传大小限制
-                if (curPart.fd.getSize() > request.session.server.getInteger("maxFileSize", 1024 * 1024 * 20)) {
-                    throw new RuntimeException("file too large");
+                curPart.addValueContent(bs);
+                if (curPart.fileData.getSize() > _filePartValueMaxLength.get()) {
+                    throw new RuntimeException("file'" +curPart.name+ "' too large");
                 }
                 return false;
-            } else { //文件最后的内容
+            } else {
                 int length = index - buf.position();
-                if (length == 0 && curPart.filename.isEmpty()) {// 未上传的情况
+                // 未上传的情况
+                if (length == 0 && curPart.fileData.getOriginName().isEmpty()) {
                     Object v = multiForm.remove(curPart.name);
-                    if (v instanceof List) ((List) v).remove(curPart.fd);
-                    else {
-                        multiForm.put(curPart.name, null);
-                    }
-                } else { // 文件写入完成
+                    if (v instanceof List) ((List) v).remove(curPart.fileData);
+                    else multiForm.put(curPart.name, null);
+                } else { // 文件最后的内容,文件写入完成
                     byte[] bs = new byte[length];
                     buf.get(bs);
-                    curPart.addFileContent(bs);
+                    curPart.addValueContent(bs);
+                }
+                if (curPart.fileData.getSize() > _filePartValueMaxLength.get()) {
+                    throw new RuntimeException("file'" +curPart.name+ "' too large");
                 }
                 curPart.valueComplete = true;
                 return true;
             }
         } else { // 文本 Part
-            String line = readLine(buf);
-            if (line == null) {
-                if (buf.remaining() == buf.limit()) { // buf数据是满的,但没读出来
-                    throw new Exception("HTTP multipart value item too large");
+            if (index == -1) { //全是值的一部分
+                byte[] bs = new byte[buf.remaining()];
+                buf.get(bs);
+                curPart.addValueContent(bs);
+                // 文本part值长度限制
+                if (curPart.valueLength() > _textPartValueMaxLength.get()) {
+                    throw new RuntimeException("part '" +curPart.name+ "' value too large");
                 }
                 return false;
             }
-            curPart.value = line.replace("\r", "");
+            int length = index - buf.position();
+            if (length > 0) {
+                byte[] bs = new byte[length];
+                buf.get(bs);
+                curPart.addValueContent(bs);
+            }
+            // 文本part值长度限制
+            if (curPart.valueLength() > _textPartValueMaxLength.get()) {
+                throw new RuntimeException("part '" +curPart.name+ "' value too large");
+            }
             curPart.valueComplete = true;
+            String value = curPart._textValue.get();
             if (multiForm.containsKey(curPart.name)) {
                 Object v = multiForm.get(curPart.name);
-                if (v instanceof List) ((List) v).add(curPart.value);  // 有多个值
-                else {
-                    multiForm.put(curPart.name, new LinkedList<>(Arrays.asList(v, curPart.fd)));
-                }
-            } else multiForm.put(curPart.name, curPart.value);
+                if (v instanceof List) ((List) v).add(value);  // 有多个值
+                else multiForm.put(curPart.name, new LinkedList<>(Arrays.asList(v, value)));
+            } else multiForm.put(curPart.name, value);
             return true;
         }
     }
@@ -375,51 +398,81 @@ public class HttpDecoder {
 
 
     /**
+     * 把一组 byte[] 文本化
+     */
+    protected String text(Queue<byte[]> content) {
+        if (content.isEmpty()) return null;
+        byte[] resultBs;
+        if (content.size() == 1) resultBs = content.poll();
+        else {
+            resultBs = new byte[content.stream().mapToInt(b -> b.length).sum()];
+            int i = 0;
+            while (!content.isEmpty()) {
+                byte[] bs = content.poll();
+                for (byte b : bs) { resultBs[i] = b; i++;}
+            }
+        }
+        return new String(resultBs, request.session.server.getCharset());
+    }
+
+
+    /**
      * http 请求体 Part
      */
     protected class Part {
-        String boundary;
+        // 参数名
         String name;
-        String filename;
-        // File   tmpFile;
-        Queue<ByteArrayInputStream> fileContent;
-        FileData fd;
+        // part分隔符
+        String boundary;
+        // part header 是否已读完
         boolean headerComplete;
-        String value;
         boolean valueComplete;
-        InputStream fileInputStream;
+        // part 值内容
+        final Queue<byte[]> valueContent = new ConcurrentLinkedQueue<>();
+        // part 为文件
+        FileData fileData;
+        // part 值文本化
+        final Lazies<String> _textValue = new Lazies<>(() -> text(valueContent));
+        // part 值 InputStream
+        final InputStream valueInputStream = new InputStream() {
+            protected InputStream currentStream;
+            @Override
+            public int available() throws IOException {
+                return currentStream == null ? 0 : currentStream.available() + valueContent.stream().mapToInt(b -> b.length).sum();
+            }
 
-        InputStream createInputStream() {
-            fileContent = new ConcurrentLinkedQueue<>();
-            fileInputStream = new InputStream() {
-                protected InputStream currentStream;
-                @Override
-                public int read() throws IOException {
-                    if (currentStream == null) {
-                        if (fileContent.isEmpty()) return -1;
-                        currentStream = fileContent.poll();
-                    }
-                    int result = currentStream.read();
-                    if (result == -1) {
-                        currentStream = null;
-                        return read();
-                    }
-                    return result;
+            @Override
+            public int read() throws IOException {
+                if (currentStream == null) {
+                    if (valueContent.isEmpty()) return -1;
+                    currentStream = new ByteArrayInputStream(valueContent.poll());
                 }
-                @Override
-                public int read(byte[] b, int off, int len) throws IOException {
-                    if (currentStream != null && currentStream.available() >= len) {
-                        return currentStream.read(b, off, len);
-                    }
-                    return super.read(b, off, len);
+                int result = currentStream.read();
+                if (result == -1) {
+                    currentStream = null;
+                    return read();
                 }
-            };
-            return fileInputStream;
+                return result;
+            }
+
+            @Override
+            public int read(byte[] b, int off, int len) throws IOException {
+                if (currentStream != null && currentStream.available() >= len) {
+                    return currentStream.read(b, off, len);
+                }
+                return super.read(b, off, len);
+            }
+        };
+
+        // part 值内容
+        void addValueContent(byte[] contentPart) {
+            valueContent.offer(contentPart);
+            if (fileData != null) {
+                fileData.setSize(fileData.getSize() == null ? 0 : fileData.getSize() + contentPart.length);
+            }
         }
 
-        void addFileContent(byte[] contentPart) {
-            fileContent.offer(new ByteArrayInputStream(contentPart));
-            fd.setSize(fd.getSize() == null ? 0 : fd.getSize() + contentPart.length);
-        }
+        // part 值长度
+        int valueLength() { return valueContent.stream().mapToInt(b -> b.length).sum(); }
     }
 }
